@@ -87,7 +87,7 @@ public class CompanionService extends Service {
     private void publish(){
         if(stopped)return;onlineCount=(int)hosts.values().stream().filter(h->h.ready).count();hostCount=hosts.size();
         JSONArray statuses=new JSONArray(),approvals=new JSONArray();
-        for(Host h:hosts.values()){statuses.put(json("key",h.key,"online",h.ready,"error",h.error));for(JSONObject approval:h.approvals.values())approvals.put(approval);}
+        for(Host h:hosts.values()){statuses.put(json("key",h.key,"online",h.ready,"error",h.error,"transport",h.route));for(JSONObject approval:h.approvals.values())approvals.put(approval);}
         snapshot=json("enabled",!stopped,"hosts",statuses,"approvals",approvals).toString();
         CompanionPlugin.changed(snapshot);
         notices().notify(ONGOING,ongoing());
@@ -113,32 +113,32 @@ public class CompanionService extends Service {
         try{notices().notify(noticeId(host.key+(kind.equals("approval")?eventId:session)),n);}catch(SecurityException ignored){}
     }
     final class Host {
-        final String key,token;final JSONObject record;WebSocket socket;boolean ready,disposed;int attempt;String error="",clientId="",listId="";long lastFrame,listStarted,listRevision,eventRevision;Runnable retry,poll;
+        final String key,token;final JSONObject record;HybridTransport socket;String route="relay";boolean ready,disposed;int attempt;String error="",clientId="",listId="";long lastFrame,listStarted,listRevision,eventRevision;Runnable retry,poll;
         final Map<String,Long> sessionRevisions=new HashMap<>();final Map<String,Boolean> running=new HashMap<>();final Set<String> failed=new HashSet<>();final Map<String,JSONObject> approvals=new LinkedHashMap<>();
         final Map<String,com.getcapacitor.PluginCall> answers=new HashMap<>();final Map<String,String> answerEvents=new HashMap<>();
         Host(String key,JSONObject record,String token){this.key=key;this.record=record;this.token=token;}
         String name(){return record.optString("alias",record.optString("name","我的 DSH"));}
-        void send(JSONObject frame){if(socket!=null)socket.send(frame.toString());}
+        void send(JSONObject frame){if(socket!=null)socket.send(frame);}
         void open(){
             if(disposed||stopped)return;worker.removeCallbacksAndMessages(this);if(retry!=null)worker.removeCallbacks(retry);if(poll!=null)worker.removeCallbacks(poll);
-            WebSocket old=socket;socket=null;if(old!=null)old.cancel();ready=false;listId="";clearApprovals();
+            HybridTransport old=socket;socket=null;if(old!=null)old.close();ready=false;listId="";clearApprovals();
             try{
                 URI u=new URI(record.getString("url"));if(!Arrays.asList("http","https","ws","wss").contains(u.getScheme()))throw new IllegalArgumentException();boolean secure=u.getScheme().equals("https")||u.getScheme().equals("wss");
                 if(!secure&&!record.optString("mode").equals("lan"))throw new IllegalArgumentException();
                 if(u.getHost()==null||u.getUserInfo()!=null||u.getQuery()!=null||u.getFragment()!=null)throw new IllegalArgumentException();
                 String url=new URI(secure?"wss":"ws",null,u.getHost(),u.getPort(),"/connect",null,null).toString();
-                socket=http.newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
-                    @Override public void onOpen(WebSocket ws,Response r){worker.post(()->{if(socket!=ws)return;send(json("type","hello","deviceId",record.optString("deviceId"),"token",token));});}
-                    @Override public void onMessage(WebSocket ws,String text){worker.post(()->{if(socket!=ws)return;try{if(text.length()>8*1024*1024)throw new Exception();frame(new JSONObject(text));}catch(Exception e){lost(ws,"连接数据异常");}});}
-                    @Override public void onFailure(WebSocket ws,Throwable t,Response r){worker.post(()->lost(ws,"电脑暂时离线，正在自动重连"));}
-                    @Override public void onClosing(WebSocket ws,int code,String reason){ws.close(code,null);worker.post(()->lost(ws,"电脑暂时离线，正在自动重连"));}
-                    @Override public void onClosed(WebSocket ws,int code,String reason){worker.post(()->lost(ws,"电脑暂时离线，正在自动重连"));}
+                final HybridTransport[] generation=new HybridTransport[1];
+                socket=generation[0]=new HybridTransport(CompanionService.this,worker,http,url,token,record.optString("deviceId"),!record.optString("mode").equals("lan"),new HybridTransport.Listener(){
+                    public void frame(JSONObject value){if(socket!=generation[0])return;try{Host.this.frame(value);}catch(Exception e){lost(generation[0],"连接数据异常");}}
+                    public void closed(String reason){lost(generation[0],reason);}
+                    public void route(String value){if(socket==generation[0]){route=value;publish();}}
                 });
-                WebSocket generation=socket;worker.postAtTime(()->{if(socket==generation&&!ready)lost(generation,"连接超时，正在重试");},this,SystemClock.uptimeMillis()+15000);
+                socket.start();
+                worker.postAtTime(()->{if(socket==generation[0]&&!ready)lost(generation[0],"连接超时，正在重试");},this,SystemClock.uptimeMillis()+15000);
             }catch(Exception e){error="连接配置无效，请检查电脑设置";publish();}
         }
-        void lost(WebSocket ws,String reason){
-            if(socket!=ws||disposed||stopped)return;socket=null;ws.cancel();ready=false;error=reason;listId="";clearApprovals();if(poll!=null)worker.removeCallbacks(poll);
+        void lost(HybridTransport ws,String reason){
+            if(ws==null||socket!=ws||disposed||stopped)return;socket=null;ws.close();ready=false;error=reason;listId="";clearApprovals();if(poll!=null)worker.removeCallbacks(poll);
             for(com.getcapacitor.PluginCall call:answers.values())call.reject("连接断开，请检查审批状态后重试");answers.clear();answerEvents.clear();
             retry=this::open;worker.postDelayed(retry,Math.min(15000,1000L<<Math.min(attempt++,4)));publish();
         }
@@ -185,7 +185,7 @@ public class CompanionService extends Service {
         }
         void removeApproval(String eventId){if(approvals.remove(eventId)!=null){notices().cancel(noticeId(key+eventId));publish();}}
         void clearApprovals(){for(String id:approvals.keySet())notices().cancel(noticeId(key+id));approvals.clear();}
-        void dispose(){disposed=true;if(retry!=null)worker.removeCallbacks(retry);if(poll!=null)worker.removeCallbacks(poll);worker.removeCallbacksAndMessages(this);WebSocket old=socket;socket=null;if(old!=null)old.cancel();clearApprovals();for(com.getcapacitor.PluginCall call:answers.values())call.reject("已断开此电脑");answers.clear();}
+        void dispose(){disposed=true;if(retry!=null)worker.removeCallbacks(retry);if(poll!=null)worker.removeCallbacks(poll);worker.removeCallbacksAndMessages(this);HybridTransport old=socket;socket=null;if(old!=null)old.close();clearApprovals();for(com.getcapacitor.PluginCall call:answers.values())call.reject("已断开此电脑");answers.clear();}
     }
     @Override public void onDestroy(){
         stopped=true;instance=null;

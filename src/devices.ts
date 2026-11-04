@@ -1,6 +1,6 @@
 import type {ConnectionProfile,ConnectionState} from './types.ts';
 export type SavedDevice=ConnectionProfile&{key:string;enabled:boolean;alias?:string};
-export type DeviceStatus={state:ConnectionState;error:string;name:string;approvals:number};
+export type DeviceStatus={state:ConnectionState;error:string;name:string;approvals:number;transport?:'relay'|'p2p'|'lan'};
 export const DEVICES_KEY='dsh.devices.v1';
 export const ACTIVE_DEVICE_KEY='dsh.active-device';
 export const DEFAULT_PROFILE:ConnectionProfile={url:'https://dshapi.shelterhub.moe',deviceId:'',token:'',mode:'public'};

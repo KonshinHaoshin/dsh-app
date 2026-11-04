@@ -35,6 +35,7 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
 
   const [client]=useState(()=>new HarnessConnection());
   const [state,setState]=useState<ConnectionState>('disconnected');
+  const [transport,setTransport]=useState<'relay'|'p2p'|'lan'>(device.mode==='lan'?'lan':'relay');
   const [connectionError,setConnectionError]=useState('');
   const [sessions,setSessions]=useState<Session[]>([]);
   const [selected,setSelected]=useState(()=>device.key==='empty'?'':localStorage.getItem('dsh.session.'+device.key)??'');
@@ -86,11 +87,12 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   function removeAttachment(id:string){setAttachments(previous=>previous.filter(a=>{if(a.id!==id)return true;if(a.preview)URL.revokeObjectURL(a.preview);return false;}));}
   function refresh(){refreshSessions.current();}
   useEffect(()=>{
+    client.onTransport=setTransport;
     client.onState=(s,message)=>{setState(s);setConnectionError(message??'');if(s!=='connected'){clientId.current='';setApprovals([]);}};
     if(device.enabled&&profile.deviceId&&profile.token)client.connect(profile);else client.disconnect();
-    return()=>{client.onState=undefined;client.disconnect();};
+    return()=>{client.onState=undefined;client.onTransport=undefined;client.disconnect();};
   },[client,device.enabled,profile.url,profile.deviceId,profile.token,attempt]);
-  useEffect(()=>{if(device.key!=='empty')statusCallback.current(device.key,{state,error:connectionError,name:client.name,approvals:approvals.length});},[device.key,client,state,connectionError,approvals.length]);
+  useEffect(()=>{if(device.key!=='empty')statusCallback.current(device.key,{state,error:connectionError,name:client.name,approvals:approvals.length,transport});},[device.key,client,state,connectionError,approvals.length,transport]);
   useEffect(()=>{if(device.key!=='empty')localStorage.setItem('dsh.session.'+device.key,selected);},[device.key,selected]);
   useEffect(()=>{setWorkspaceKey(localStorage.getItem('dsh.workspace.'+device.key)??'');},[device.key]);
   useEffect(()=>{

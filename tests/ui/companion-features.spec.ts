@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {test,expect} from '@playwright/test';
 import type {Page,WebSocketRoute} from '@playwright/test';
 const token='test-only-persistent-phone-token-000001';
@@ -6,7 +7,7 @@ async function host(page:Page){
  await page.routeWebSocket('wss://features.test/connect',ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws));ws.onMessage(raw=>{
   if(muted.has(ws))return;
   const f=JSON.parse(String(raw)),send=(type:string,value:unknown)=>ws.send(JSON.stringify({type,id:f.id,value}));
-  if(f.type==='hello'){hellos++;expect(f.token).toBe(token);if(offline){ws.close({code:1008,reason:'设备离线或配对信息不正确'});return;}ws.send(JSON.stringify({type:'ready',protocol:1,name:'功能测试电脑'}));}
+  if(f.type==='hello'){hellos++;expect(f.token).toBeUndefined();expect(f.tokenDigest).toBe(createHash('sha256').update(token).digest('hex'));if(offline){ws.close({code:1008,reason:'设备离线或配对信息不正确'});return;}ws.send(JSON.stringify({type:'ready',protocol:1,name:'功能测试电脑'}));}
   if(f.type==='ping'){pongs++;ws.send(JSON.stringify({type:'pong'}));}
   if(f.type==='call'){calls.push(f);if(f.endpoint==='session/list')send('result',{items:[]});else if(f.endpoint==='session/modelCatalog')send('result',{groups:[]});else if(f.endpoint==='session/create')send('result',{sessionId:'test-session'});else if(f.endpoint==='fileUploads/upload')send('result',{receiptId:'receipt-for-session'});else if(f.endpoint==='session/prompt'){if(failPrompt)ws.send(JSON.stringify({type:'error',id:f.id,error:{message:'模型暂不可用'}}));else send('result',{accepted:true});}else send('result',{});}
   if(f.type==='open'){if(f.endpoint==='workspace/follow')send('item',{type:'baseline',value:{items:[]}});else if(f.endpoint==='$events')send('item',{type:'ready',clientId:'events-client'});else if(f.endpoint==='session/follow')send('item',{type:'snapshot',cursor:0,records:[{type:'event',event:{seq:0,type:'user/message',data:{source:{kind:'runtime-context'},content:[{type:'text',text:'Current runtime context. Internal path.'}]}}}],hasMore:false});}

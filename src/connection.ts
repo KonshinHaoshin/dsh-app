@@ -1,8 +1,11 @@
 import type { ConnectionProfile, ConnectionState } from './types';
+import {HybridSocket} from './transport/HybridSocket';
 type Frame = {type:string;id?:string;value?:unknown;error?:{code:string;message:string};name?:string;protocol?:number};
 type Subscription = {endpoint:string;params:Record<string,unknown>;onItem:(value:any)=>void;onError:(error:Error)=>void};
 export class HarnessConnection {
-  private ws?:WebSocket;
+  private ws?:HybridSocket;
+  transport:'relay'|'p2p'|'lan'='relay';
+  onTransport?:(transport:'relay'|'p2p'|'lan')=>void;
   private profile?:ConnectionProfile;
   private pending=new Map<string,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   private streams=new Map<string,Subscription>();
@@ -30,7 +33,7 @@ export class HarnessConnection {
       if(!['ws:','wss:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('请输入有效的服务器地址');
       if(url.protocol==='ws:' && this.profile.mode==='public')throw new Error('公网连接需要 HTTPS / WSS');
       url.pathname='/connect';
-      this.ws=new WebSocket(url);
+      this.ws=new HybridSocket(url,this.profile,route=>{this.transport=route;this.onTransport?.(route);});
     }catch(error){this.setState('error',(error as Error).message);return;}
     const ws=this.ws;
     this.handshake=setTimeout(()=>{if(this.ws===ws)ws.close(4000,'连接超时');},10000);

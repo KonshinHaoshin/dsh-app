@@ -59,7 +59,7 @@ export default function DeviceApp(){
 
   const reportStatus=useCallback((key:string,status:DeviceStatus)=>{
     statusesRef.current={...statusesRef.current,[key]:status};
-    setStatuses(previous=>{const old=previous[key];if(old&&old.state===status.state&&old.error===status.error&&old.name===status.name&&old.approvals===status.approvals)return previous;return {...previous,[key]:status};});
+    setStatuses(previous=>{const old=previous[key];if(old&&old.state===status.state&&old.error===status.error&&old.name===status.name&&old.approvals===status.approvals&&old.transport===status.transport)return previous;return {...previous,[key]:status};});
     if(status.state==='connected'&&status.name)setDevices(previous=>{const d=previous.find(x=>x.key===key);return !d||d.name===status.name?previous:previous.map(x=>x.key===key?{...x,name:status.name}:x);});
     if(status.state==='connected'&&pendingClose.current===key){pendingClose.current='';setConnectionsOpen(false);}
   },[]);

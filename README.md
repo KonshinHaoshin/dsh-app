@@ -6,7 +6,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 ## 安装 Android App
 
-下载 [DSH Android v0.6.0 APK](releases/v0.6.0/dsh-mobile-0.6.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
+下载 [DSH Android v0.7.0 APK](releases/v0.7.0/dsh-mobile-0.7.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
 
 这是可直接安装的调试签名 APK，尚未配置商店发布签名。自行构建时应保留相同签名密钥，才能覆盖更新同签名的旧版本。
 
@@ -56,7 +56,13 @@ v0.6.1 的会话首屏只请求最近 30 条消息，更早记录按需加载。
 
 手机发送直接调用 `session/create` / `session/prompt`，配套插件不调用桌面启动、显示或置顶接口。电脑 DSH 的主窗口可隐藏，Host 需继续运行；退出 DSH 会停止连接。工具显式打开应用、浏览器或使用电脑的行为仍可能显示窗口。目前没有复现用户报告的弹窗，不能将其视为已修复。
 
-公网当前使用 WSS 中继，尚未实现 P2P。后续可采用局域网直连、WebRTC P2P 和 WSS 兜底；中继先提供可用连接，再并行探测直连，避免等待打洞拖慢首屏。迁移时保持配对认证、恢复订阅，不能重发已受理的写操作；Android 原生后台连接仍需保留可用的传输路径。P2P 主要影响网络往返时间，无法直接缩短电脑读取历史或手机渲染耗时。参见 [WebRTC 连接说明](https://webrtc.org/getting-started/peer-connections)。
+公网使用 **P2P 优先、WSS 中继兜底**。先经中继建立可用会话，再并行协商 WebRTC；成功后自动切换，失败或直连断开时自动走中继。连接页显示当前路径，不需要重新扫码。电脑插件需更新至 **v0.5.0**，旧插件仍走中继。自建中继需升级摘要认证与能力透传，官方中继已经部署。
+
+两条路径共享带序号、确认、去重和有界缓冲的逻辑会话。切换不重建审批所有者，大附件分块传输。Host 重启后代次改变，旧变更操作不会自动重发；需检查会话状态再决定重试。
+
+Android 的原生后台服务直接使用 WebRTC 和 WSS，锁屏通知不依赖 WebView。仍需开启「后台连接与通知」及允许通知、电池不受限制。仅建立数据通道，不申请麦克风或相机用于 P2P。P2P 流量经 DTLS 加密，协商使用配对密钥签名；走中继时内容仍可被中继读取。iOS 原生后台通知与签名包仍未提供。
+
+直连是否成功取决于双方网络，不能保证所有 NAT/防火墙都能打通；无法直连时会自动使用中继。参见 [WebRTC 连接说明](https://webrtc.org/getting-started/peer-connections)。
 
 ## 检查更新
 
@@ -162,3 +168,12 @@ Copyright © 2026 konshinhaoshin.
 v0.6.0 已在 Android 模拟器验证深度休眠通知和系统覆盖升级；Play Protect 扫描通过后完成安装，升级后加密凭据可正常读取。尚未完成各手机厂商系统的真机后台测试。
 
 系统行为参考：[Android 前台远程消息服务](https://developer.android.com/develop/background-work/services/fgs/service-types#remote-messaging)、[通知权限](https://developer.android.com/develop/ui/compose/notifications/notification-permission)、[Doze 与电池优化](https://developer.android.com/training/monitoring-device-state/doze-standby)。
+
+
+## P2P 集成验证
+
+`tests/integration/p2p.mjs` 通过真实 Chromium 与桌面插件的 WebRTC/DTLS/SCTP，验证直连、大消息分块、信令重连、不中断审批的 WSS 回退，以及协商失败后的可用中继。先运行 Vite（端口 5186）。依赖同级 `dsh-app-plugin` 和工作区 `server/relay.mjs`。
+
+`tests/native/p2p-background.mjs` 仅可在隔离模拟器运行，需要当前 APK 和中继管理员测试凭据文件（`DSH_QA_RELAY_SECRET_FILE`）。使用随机临时主机及模拟 DSH，不调用模型或执行工具；验证公网信令/STUN、原生 P2P、强制 Doze、暂停 WebView JS、任务及审批通知、切断 P2P 后的锁屏通知，以及保留的审批只手动回复一次。脚本拒绝覆盖已有电脑列表，清理自身测试连接。真实中继凭据不得提交仓库或写入日志。
+
+原生 WebRTC 组件许可位于 `licenses/`，也随 APK 作为 `third_party_webrtc.txt` 打包。

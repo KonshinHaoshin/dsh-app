@@ -58,5 +58,5 @@ test('pairing and searchable workspaces use only a browser-side protocol mock',a
   await expect(picker.getByRole('option')).toHaveCount(2);
   await expect(picker.getByText('/projects/mobile',{exact:true})).toBeVisible();
   await picker.getByRole('option').filter({hasText:'手机项目'}).click();
-  await expect(page.locator('.context-button')).toHaveText('手机项目');
+  await expect(page.getByRole('button',{name:'选择会话工作区'})).toHaveText('手机项目');
 });

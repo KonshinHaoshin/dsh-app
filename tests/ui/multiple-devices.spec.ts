@@ -48,12 +48,12 @@ test('two computers stay connected with isolated sessions, drafts, workspaces an
   await expect.poll(()=>a.calls.filter(f=>f.endpoint==='session/prompt').length).toBe(1);
   await pair(page,b.link);await openSession(page,'B');
   await expect.poll(()=>a.sockets.size).toBe(1);await expect.poll(()=>b.sockets.size).toBe(1);
-  await expect(active(page).getByLabel('推理强度',{exact:true})).toHaveValue('high');
+  await active(page).getByRole('button',{name:'模型与推理强度',exact:true}).click();await expect(active(page).getByLabel('推理强度',{exact:true})).toHaveValue('high');await page.getByRole('button',{name:'关闭模型设置'}).click();
   expect(await active(page).locator('.workspace-row').textContent()).toBe('所有工作区');
   await page.getByRole('textbox',{name:'发送给 DSH 的消息'}).fill('B 的未发送草稿');a.finish();a.reply('A 的后台回复');
   await expect(page.getByRole('textbox',{name:'发送给 DSH 的消息'})).toHaveValue('B 的未发送草稿');
   await expect(page.getByText('A 的后台回复',{exact:true})).not.toBeVisible();expect(b.calls.filter(f=>f.endpoint==='session/prompt')).toHaveLength(0);
-  await switchTo(page,a.name);await expect(page.getByText('A 的后台回复',{exact:true})).toBeVisible();await expect(active(page).getByLabel('推理强度',{exact:true})).toHaveValue('low');
+  await switchTo(page,a.name);await expect(page.getByText('A 的后台回复',{exact:true})).toBeVisible();await active(page).getByRole('button',{name:'模型与推理强度',exact:true}).click();await expect(active(page).getByLabel('推理强度',{exact:true})).toHaveValue('low');await page.getByRole('button',{name:'关闭模型设置'}).click();
   expect(await active(page).locator('.workspace-row').textContent()).toBe('A 项目');
   await switchTo(page,b.name);await expect(page.getByRole('textbox',{name:'发送给 DSH 的消息'})).toHaveValue('B 的未发送草稿');
   await active(page).locator('.connection-pill').click();await page.screenshot({path:'artifacts/multiple-computers-v04.png',animations:'disabled'});

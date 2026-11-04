@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
+import {App} from '@capacitor/app';
 import HostWorkspace from './HostWorkspace';
 import ConnectionSheet from './ConnectionSheet';
 import {ACTIVE_DEVICE_KEY,DEFAULT_PROFILE,loadDevices,saveDevices,upsertDevice} from './devices';
@@ -21,6 +22,7 @@ export default function DeviceApp(){
   const modal=useRef<HTMLElement>(null);
   const activeDevice=devices.find(d=>d.key===activeKey)??devices[0];
 
+  useEffect(()=>{const listener=App.addListener('appStateChange',({isActive})=>{if(isActive)window.dispatchEvent(new Event('dsh-resume'));});return()=>{void listener.then(h=>h.remove());};},[]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('dsh.theme',theme);},[theme]);
   useEffect(()=>{
     let alive=true;

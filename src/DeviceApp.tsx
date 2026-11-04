@@ -1,5 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {App} from '@capacitor/app';
+import {checkUpdateInBackground} from './updateCache';
+import {useCompanion} from './companion';
 import HostWorkspace from './HostWorkspace';
 import ConnectionSheet from './ConnectionSheet';
 import {ACTIVE_DEVICE_KEY,DEFAULT_PROFILE,loadDevices,saveDevices,upsertDevice} from './devices';
@@ -17,12 +19,15 @@ export default function DeviceApp(){
   const statusesRef=useRef<Record<string,DeviceStatus>>({});
   const [attempts,setAttempts]=useState<Record<string,number>>({});
   const [ready,setReady]=useState(false),[connectionsOpen,setConnectionsOpen]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  const background=useCompanion(devices,ready);const [noticeSession,setNoticeSession]=useState<{key:string;sessionId:string;sequence:number}|null>(null);
   const [theme,setTheme]=useState(()=>localStorage.getItem('dsh.theme')??'light');
   const pendingClose=useRef('');const initialDrafts=useRef(new Map<string,string>());const unconnectedDraft=useRef('');
   const modal=useRef<HTMLElement>(null);
   const activeDevice=devices.find(d=>d.key===activeKey)??devices[0];
 
+  useEffect(()=>{void checkUpdateInBackground();const wake=()=>void checkUpdateInBackground();window.addEventListener('dsh-resume',wake);return()=>window.removeEventListener('dsh-resume',wake);},[]);
   useEffect(()=>{const listener=App.addListener('appStateChange',({isActive})=>{if(isActive)window.dispatchEvent(new Event('dsh-resume'));});return()=>{void listener.then(h=>h.remove());};},[]);
+  useEffect(()=>{if(!ready||!background.navigation)return;const n=background.navigation;if(n.key&&devices.some(d=>d.key===n.key)){setActiveKey(n.key);setConnectionsOpen(false);if(n.sessionId)setNoticeSession({key:n.key,sessionId:n.sessionId,sequence:Date.now()});}else setConnectionsOpen(true);background.consumeNavigation();},[background.navigation,ready]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('dsh.theme',theme);},[theme]);
   useEffect(()=>{
     let alive=true;
@@ -107,8 +112,8 @@ export default function DeviceApp(){
   const views=devices.length?devices:[EMPTY];
   return <div className="device-root">
     {views.map(device=>{const active=activeDevice?activeDevice.key===device.key:true;return <div className="device-workspace" key={device.key} hidden={!active}>
-      <HostWorkspace device={{...device,enabled:device.enabled&&ready}} active={active} blocked={connectionsOpen} theme={theme} onThemeChange={setTheme} attempt={attempts[device.key]??0} initialDraft={initialDrafts.current.get(device.key)??(device.key==='empty'?unconnectedDraft.current:'')} otherApprovals={Object.entries(statuses).reduce((n,[key,s])=>n+(key===device.key?0:s.approvals),0)} onOpenConnections={openConnections} onStatus={reportStatus}/>
+      <HostWorkspace nativeBackground={background.state.enabled&&background.state.running} nativeApprovals={background.state.approvals.filter(a=>a.deviceKey===device.key)} noticeSession={noticeSession?.key===device.key?noticeSession:null} device={{...device,enabled:device.enabled&&ready}} active={active} blocked={connectionsOpen} theme={theme} onThemeChange={setTheme} attempt={attempts[device.key]??0} initialDraft={initialDrafts.current.get(device.key)??(device.key==='empty'?unconnectedDraft.current:'')} otherApprovals={Object.entries(statuses).reduce((n,[key,s])=>n+(key===device.key?0:s.approvals),0)} onOpenConnections={openConnections} onStatus={reportStatus}/>
     </div>;})}
-    {connectionsOpen&&<div className="modal-layer" onMouseDown={e=>{if(e.target===e.currentTarget)setConnectionsOpen(false);}}><section ref={modal} className="settings-sheet connection-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title"><ConnectionSheet devices={devices} activeKey={activeDevice?.key??''} statuses={statuses} busy={saving||!ready} error={error} onConnect={connect} onSelect={selectDevice} onToggle={toggleDevice} onForget={forgetDevice} onRename={renameDevice} onClose={()=>setConnectionsOpen(false)}/></section></div>}
+    {connectionsOpen&&<div className="modal-layer" onMouseDown={e=>{if(e.target===e.currentTarget)setConnectionsOpen(false);}}><section ref={modal} className="settings-sheet connection-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title"><ConnectionSheet background={background.state} backgroundError={background.error} onBackgroundToggle={background.toggle} devices={devices} activeKey={activeDevice?.key??''} statuses={statuses} busy={saving||!ready} error={error} onConnect={connect} onSelect={selectDevice} onToggle={toggleDevice} onForget={forgetDevice} onRename={renameDevice} onClose={()=>setConnectionsOpen(false)}/></section></div>}
   </div>;
 }

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "appId": "moe.shelterhub.dsh",
-  "version": "0.5.0",
-  "versionCode": 5,
-  "notes": "修复运行上下文被误显示为聊天消息。\n配对信息长期保存，主机离线、网络恢复和回到前台时自动重连，无需重复扫码。\n新增明确的「模型与推理」面板，按电脑提供的档位调整推理强度。\n支持图片与文件附件、预览、移除和失败重试，每次合计最多 4 MB；需电脑端插件 v0.4.0。",
+  "version": "0.6.0",
+  "versionCode": 6,
+  "notes": "新增 Android 原生后台连接，切到后台或锁屏后接收任务结束和审批通知。\n在“连接 → 后台连接与通知”开启，允许通知并按需设置电池不受限制；常驻通知可随时关闭。\n通知可返回对应电脑与会话，审批仍需手动确认。\n检查更新入口移至连接页顶部，支持每日自动检查、App 内下载进度、完整性与签名校验及系统确认安装。",
   "android": {
-    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.5.0/releases/v0.5.0/dsh-mobile-0.5.0-debug.apk",
-    "sha256": "ffc53607883968b758a2490e78fd052f8ef9ffebd1b190f42301cea8fec589d9",
-    "size": 34015060
+    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.6.0/releases/v0.6.0/dsh-mobile-0.6.0-debug.apk",
+    "sha256": "80fd9e33f2130fdadecfb42061484feea7e5e6128180f23ba2dc3cadafea5a91",
+    "size": 34601495
   }
 }

@@ -68,6 +68,17 @@ public class DeviceCredentialsPlugin extends Plugin {
         return generator.generateKey();
     }
 
+    static String readCredential(Context context, String key) throws Exception {
+        String encoded = context.getSharedPreferences("dsh-device-credentials", Context.MODE_PRIVATE).getString(key, null);
+        if (encoded == null) return "";
+        String[] parts = encoded.split("\\.", 2);
+        if (parts.length != 2) throw new IllegalArgumentException();
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, encryptionKey(), new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
+        cipher.updateAAD(key.getBytes(StandardCharsets.UTF_8));
+        return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
+    }
+
     @PluginMethod
     public void get(PluginCall call) {
         try {

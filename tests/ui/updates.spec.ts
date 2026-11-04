@@ -12,7 +12,14 @@ test('manual checks show a new version and open the official APK download',async
   await expect.poll(()=>page.evaluate(()=>(window as any).__download)).toBe(manifest.android.url);
 });
 test('latest version and network failure are visible and retryable without a DSH connection',async({page})=>{
-  let fail=true;await page.route('**/dsh-app/main/update.json',route=>fail?route.fulfill({status:503,body:'unavailable'}):route.fulfill({json:{...manifest,version:metadata.version,versionCode:5}}));
+  let fail=true;await page.route('**/dsh-app/main/update.json',route=>fail?route.fulfill({status:503,body:'unavailable'}):route.fulfill({json:{...manifest,version:metadata.version,versionCode:6,android:{...manifest.android,url:`https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v${metadata.version}/releases/v${metadata.version}/dsh-mobile-${metadata.version}-debug.apk`}}}));
   await page.goto('/');await page.getByRole('button',{name:'连接 DSH',exact:true}).click();await page.getByRole('button',{name:'检查更新',exact:true}).click();await expect(page.getByRole('alert')).toContainText('503');
   fail=false;await page.getByRole('button',{name:'检查更新',exact:true}).click();await expect(page.getByText('已是最新版本',{exact:true})).toBeVisible();
+});
+
+test('a discovered update remains available after closing settings and restarting the page',async({page})=>{
+ await page.route('**/dsh-app/main/update.json',route=>route.fulfill({json:manifest}));
+ await page.goto('/');await page.getByRole('button',{name:'连接 DSH',exact:true}).click();await page.getByRole('button',{name:'检查更新',exact:true}).click();await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
+ await page.keyboard.press('Escape');await page.getByRole('button',{name:'连接 DSH',exact:true}).click();await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
+ await page.reload();await page.getByRole('button',{name:'连接 DSH',exact:true}).click();await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
 });

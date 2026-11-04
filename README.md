@@ -6,7 +6,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 ## 安装 Android App
 
-下载 [DSH Android v0.5.0 APK](releases/v0.5.0/dsh-mobile-0.5.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
+下载 [DSH Android v0.6.0 APK](releases/v0.6.0/dsh-mobile-0.6.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
 
 这是可直接安装的调试签名 APK，尚未配置商店发布签名。自行构建时应保留相同签名密钥，才能覆盖更新同签名的旧版本。
 
@@ -28,7 +28,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 - 以服务地址和设备 ID 区分连接，名称相同或不同服务使用相同设备 ID 时仍保留独立记录。
 - Android 自动迁移旧版连接，并使用 Keystore 的 AES-GCM 密钥加密保存配对信息；设备列表同步写入原生存储。重启 App 后会重新连接已启用的电脑。
 
-App 在前台可同时保持多条连接。Android 息屏或系统挂起 App 时，连接恢复受系统生命周期约束，目前没有后台保活服务或推送。
+Android 在「连接 → 后台连接与通知」开启原生前台服务后，可在切后台或锁屏时继续接收任务结束和审批通知。需要允许通知；为在深度休眠时保持网络，请允许 DSH 不受电池优化限制。常驻连接会增加耗电，可在 App 或常驻通知中关闭。系统强行停止 App、手机关机或电脑离线时无法实时接收，重新打开或联网后恢复。
 
 ## 功能
 
@@ -44,7 +44,7 @@ App 在前台可同时保持多条连接。Android 息屏或系统挂起 App 时
 
 ## 长期配对与附件
 
-二维码只用于初次配对，其短期有效期不会使已保存的配对失效。手机重开、网络恢复、主机暂时离线或回到前台后会自动恢复已启用的连接。Android 受系统后台调度影响，恢复前台后重连；任务继续由电脑执行，电脑需保持开机、联网并运行 DSH。
+二维码只用于初次配对，其短期有效期不会使已保存的配对失效。手机重开、网络恢复、主机暂时离线或回到前台后会自动恢复已启用的连接。启用 Android 后台连接后由原生服务维护消息连接，任务继续由电脑执行，电脑需保持开机、联网并运行 DSH。
 
 点击输入框左下角「+」选择图片或文件，预览后发送；电脑端插件需更新到 **v0.4.0**。每次最多 6 个附件、合计 4 MB，支持 PNG/JPEG/WebP/GIF 图片及普通文件。文件由 DSH 保存到对应会话并生成专属凭据，图片由 DSH 检查当前模型的图片输入能力。上传失败会保留文字和附件，等待手动重试。
 
@@ -52,11 +52,11 @@ App 在前台可同时保持多条连接。Android 息屏或系统挂起 App 时
 
 ## 检查更新
 
-打开手机「连接」面板，点击底部的「检查更新」。发现新版本后显示版本说明和「下载更新」；点击后使用系统浏览器下载 APK，按 Android 提示安装。无可用更新、网络错误和超时会明确显示，可以重试。检查更新不要求先连接 DSH。
+打开「连接」，顶部提供「检查更新」和版本号，不需要先连接电脑。Android 启动和回到前台时每天自动检查一次；检查失败不会打断任务，可随时手动重试。已发现的新版本会保留提示。
 
-更新信息来自此仓库 `main` 分支的 `update.json`，下载指向本仓库固定版本标签下的 APK。不会在后台静默下载安装或加载远端 JavaScript。
+Android 在 App 内显示下载进度，下载后验证 SHA-256、长度、包名、版本和与当前安装包一致的签名，再打开系统安装界面。首次需要允许 DSH 安装应用，返回后点击「安装更新」。系统仍会要求用户确认，不会静默安装。浏览器版本继续下载 APK；iOS 暂无签名安装包。
 
-Android 配对密钥保存在应用私有存储中，由 Android Keystore 加密；原生调用参数日志已关闭。浏览器和 iOS 共用代码通过 IndexedDB 保存非导出 AES-GCM 密钥与加密凭据，页面重开后恢复连接；旧版 sessionStorage 凭据会自动迁移。浏览器存储仍受同源脚本权限与清理网站数据的影响。`localStorage` 中的设备列表不包含密钥。局域网 WS 为明文，仅适用于可信私人网络；公网使用 WSS，目前没有端到端加密和后台推送。
+更新源为本仓库 `main` 分支的 `update.json`，只接受本仓库与声明版本一致的 HTTPS 安装包。覆盖更新应保留原 App，避免卸载丢失配对。
 
 ## 本地开发
 
@@ -92,7 +92,7 @@ npm run android:build
 输出：
 
 ```text
-artifacts/dsh-mobile-0.5.0-debug.apk
+artifacts/dsh-mobile-0.6.0-debug.apk
 ```
 
 脚本依次构建网页、同步 Capacitor 原生依赖、执行 Gradle `assembleDebug`。为避免 exFAT / 外接磁盘的 AppleDouble 元数据影响 Android 资源解析，Gradle 在系统临时目录中运行，成功后自动清理。
@@ -144,3 +144,9 @@ releases/     可安装 APK 与 SHA-256 校验值
 此仓库只提交手机端。电脑插件位于独立的 [dsh-app-plugin 仓库](https://github.com/KonshinHaoshin/dsh-app-plugin)；后端、中继服务和服务器部署配置不包含在这里。
 
 Copyright © 2026 konshinhaoshin.
+
+## 原生后台验证
+
+`tests/native/background.mjs` 仅用于空白的隔离模拟器，通过本机 WebSocket 协议测试服务和通知，不调用模型或执行工具。需要先安装当前构建 APK，设置 `ADB` / `DSH_QA_SERIAL` 后运行 `node tests/native/background.mjs`；默认使用 `emulator-5580`。测试拒绝覆盖非空电脑列表，仅清理自身创建的测试配对。包含锁屏、深度休眠（已给予电池豁免）、暂停 WebView JavaScript、任务和审批通知、通知意图导航、显式审批回复、原生重连及非法更新源拒绝。
+
+系统行为参考：[Android 前台远程消息服务](https://developer.android.com/develop/background-work/services/fgs/service-types#remote-messaging)、[通知权限](https://developer.android.com/develop/ui/compose/notifications/notification-permission)、[Doze 与电池优化](https://developer.android.com/training/monitoring-device-state/doze-standby)。

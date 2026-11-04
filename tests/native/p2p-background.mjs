@@ -7,7 +7,8 @@ import{createHybridHost}from'../../../dsh-app-plugin/hybrid-host.mjs';
 const serial=process.env.DSH_QA_SERIAL??'emulator-5580';if(!serial.startsWith('emulator-'))throw Error('Dedicated emulator only');
 const adb=process.env.ADB??'/Users/ifan/Library/Android/sdk/platform-tools/adb',shell=(...a)=>execFileSync(adb,['-s',serial,...a],{encoding:'utf8',timeout:20000});
 const wait=async(fn,label,timeout=30000)=>{const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await new Promise(r=>setTimeout(r,250));}throw Error(label+' timed out')};
-const secret=readFileSync(process.env.DSH_QA_RELAY_SECRET_FILE??'/private/tmp/dsh-relay-secret-19406348-c26b-48cb-958b-78005bb403fd.txt','utf8').trim();
+if(!process.env.DSH_QA_RELAY_SECRET_FILE)throw Error('Set DSH_QA_RELAY_SECRET_FILE to an explicitly authorized test credential file');
+const secret=readFileSync(process.env.DSH_QA_RELAY_SECRET_FILE,'utf8').trim();
 const token=randomBytes(32).toString('base64url'),deviceId='qa-p2p-'+randomUUID(),key='native-p2p-qa',answers=[],pcs=[],streams=new Set();let registered=false,owned=false,browser,page,debuggerSession,idle=false;
 const adapter={createClient(){return{async call(endpoint,params){if(endpoint==='$events/result')answers.push(params);return endpoint==='session/list'?{items:[]} : endpoint==='session/modelCatalog'?{groups:[]} : {};},async *stream(endpoint,params,signal){
  if(endpoint==='$events'){const q=[],s={push:f=>{q.push(f);wake?.();}},clientId=randomUUID();let wake;streams.add(s);try{yield{type:'ready',clientId};while(!signal.aborted){if(q.length)yield q.shift();else await new Promise(r=>{wake=r;signal.addEventListener('abort',r,{once:true});});}}finally{streams.delete(s);}}

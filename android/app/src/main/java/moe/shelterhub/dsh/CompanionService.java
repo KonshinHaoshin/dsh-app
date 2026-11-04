@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo;
 import android.net.*;
 import android.os.*;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import org.json.*;
 import java.net.URI;
 import java.util.*;
@@ -27,8 +28,33 @@ public class CompanionService extends Service {
     private final Map<String,Host> hosts=new LinkedHashMap<>();
     volatile String snapshot="{\"enabled\":true,\"hosts\":[],\"approvals\":[]}";
     private boolean stopped;
+    volatile boolean foreground;
+    private boolean wakeLoopStarted;
     private volatile int onlineCount,hostCount;
     static boolean enabled(Context ctx){return ctx.getSharedPreferences(PREFS,MODE_PRIVATE).getBoolean(ENABLED,false);}
+    static void captureLastExit(Context context){
+        if(Build.VERSION.SDK_INT<30)return;
+        android.content.SharedPreferences prefs=context.getSharedPreferences(PREFS,MODE_PRIVATE);
+        try{for(ApplicationExitInfo exit:((ActivityManager)context.getSystemService(ACTIVITY_SERVICE)).getHistoricalProcessExitReasons(null,0,5)){
+            if(context.getPackageName().equals(exit.getProcessName())&&exit.getTimestamp()>prefs.getLong("lastStartedAt",0)&&exit.getTimestamp()>prefs.getLong("lastExitAt",0)){
+                prefs.edit().putInt("lastExitReason",exit.getReason()).putLong("lastExitAt",exit.getTimestamp()).apply();break;
+            }
+        }}catch(Exception ignored){}
+    }
+    static void ensureRunning(Context context){
+        android.content.SharedPreferences prefs=context.getSharedPreferences(PREFS,MODE_PRIVATE);
+        // Existing notification permission lets a paired device start before the
+        // WebView loads. Never override an explicit off choice or a denial.
+        if(!prefs.contains(ENABLED)&&!prefs.getBoolean("setupAttempted",false)&&NotificationManagerCompat.from(context).areNotificationsEnabled())try{
+            JSONArray records=new JSONArray(context.getSharedPreferences("dsh-device-registry",MODE_PRIVATE).getString("value","[]"));
+            for(int i=0;i<records.length();i++){JSONObject record=records.getJSONObject(i);String key=record.optString("key");if(record.optBoolean("enabled",true)&&key.matches("[a-zA-Z0-9_-]{1,100}")&&context.getSharedPreferences("dsh-device-credentials",MODE_PRIVATE).contains(key)){prefs.edit().putBoolean(ENABLED,true).putBoolean("setupAttempted",true).commit();break;}}
+        }catch(Exception ignored){}
+        if(!enabled(context))return;
+        CompanionService service=instance;
+        if(service!=null&&service.foreground){if(service.worker!=null)service.worker.post(service::refresh);return;}
+        try{context.startForegroundService(new Intent(context,CompanionService.class));}
+        catch(Exception e){context.getSharedPreferences(PREFS,MODE_PRIVATE).edit().putString("lastError","系统暂未允许启动后台连接，请回到 App 并检查后台权限").apply();}
+    }
     static JSONObject json(Object... values){JSONObject o=new JSONObject();try{for(int i=0;i<values.length;i+=2)o.put(String.valueOf(values[i]),values[i+1]);}catch(JSONException ignored){}return o;}
     static int noticeId(String key){return 5000+(key.hashCode()&0x3fffffff);}
     private NotificationManager notices(){return (NotificationManager)getSystemService(NOTIFICATION_SERVICE);}
@@ -52,7 +78,7 @@ public class CompanionService extends Service {
             .setContentIntent(open(this,"","","connections")).addAction(0,"关闭后台连接",stop).build();
     }
     @Override public void onCreate(){
-        super.onCreate();instance=this;channels(this);
+        super.onCreate();captureLastExit(this);instance=this;channels(this);
         thread=new HandlerThread("DSH companion");thread.start();worker=new Handler(thread.getLooper());
         http=new OkHttpClient.Builder().pingInterval(25,TimeUnit.SECONDS).connectTimeout(15,TimeUnit.SECONDS).build();
         network=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
@@ -64,7 +90,8 @@ public class CompanionService extends Service {
             getSharedPreferences(PREFS,MODE_PRIVATE).edit().putBoolean(ENABLED,false).commit();stopSelf();return START_NOT_STICKY;
         }
         if(Build.VERSION.SDK_INT>=34)startForeground(ONGOING,ongoing(),ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);else startForeground(ONGOING,ongoing());
-        worker.post(()->{refresh();if(wake==null){wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"DSH:remoteMessaging");wake.setReferenceCounted(false);}renewWake();});
+        foreground=true;getSharedPreferences(PREFS,MODE_PRIVATE).edit().putLong("lastStartedAt",System.currentTimeMillis()).putString("lastError","").apply();
+        worker.post(()->{refresh();if(wake==null){wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"DSH:remoteMessaging");wake.setReferenceCounted(false);}if(!wakeLoopStarted){wakeLoopStarted=true;renewWake();}});
         return START_STICKY;
     }
     private void renewWake(){if(stopped)return;if(wake.isHeld())wake.release();wake.acquire(10*60*1000L);worker.postDelayed(this::renewWake,5*60*1000L);}
@@ -87,7 +114,7 @@ public class CompanionService extends Service {
     private void publish(){
         if(stopped)return;onlineCount=(int)hosts.values().stream().filter(h->h.ready).count();hostCount=hosts.size();
         JSONArray statuses=new JSONArray(),approvals=new JSONArray();
-        for(Host h:hosts.values()){statuses.put(json("key",h.key,"online",h.ready,"error",h.error,"transport",h.route));for(JSONObject approval:h.approvals.values())approvals.put(approval);}
+        for(Host h:hosts.values()){statuses.put(json("key",h.key,"online",h.ready,"eventsReady",!h.clientId.isEmpty(),"error",h.error,"transport",h.route));for(JSONObject approval:h.approvals.values())approvals.put(approval);}
         snapshot=json("enabled",!stopped,"hosts",statuses,"approvals",approvals).toString();
         CompanionPlugin.changed(snapshot);
         notices().notify(ONGOING,ongoing());
@@ -121,7 +148,7 @@ public class CompanionService extends Service {
         void send(JSONObject frame){if(socket!=null)socket.send(frame);}
         void open(){
             if(disposed||stopped)return;worker.removeCallbacksAndMessages(this);if(retry!=null)worker.removeCallbacks(retry);if(poll!=null)worker.removeCallbacks(poll);
-            HybridTransport old=socket;socket=null;if(old!=null)old.close();ready=false;listId="";clearApprovals();
+            HybridTransport old=socket;socket=null;if(old!=null)old.close();ready=false;clientId="";listId="";clearApprovals();
             try{
                 URI u=new URI(record.getString("url"));if(!Arrays.asList("http","https","ws","wss").contains(u.getScheme()))throw new IllegalArgumentException();boolean secure=u.getScheme().equals("https")||u.getScheme().equals("wss");
                 if(!secure&&!record.optString("mode").equals("lan"))throw new IllegalArgumentException();
@@ -138,7 +165,7 @@ public class CompanionService extends Service {
             }catch(Exception e){error="连接配置无效，请检查电脑设置";publish();}
         }
         void lost(HybridTransport ws,String reason){
-            if(ws==null||socket!=ws||disposed||stopped)return;socket=null;ws.close();ready=false;error=reason;listId="";clearApprovals();if(poll!=null)worker.removeCallbacks(poll);
+            if(ws==null||socket!=ws||disposed||stopped)return;socket=null;ws.close();ready=false;error=reason;clientId="";listId="";clearApprovals();if(poll!=null)worker.removeCallbacks(poll);
             for(com.getcapacitor.PluginCall call:answers.values())call.reject("连接断开，请检查审批状态后重试");answers.clear();answerEvents.clear();
             retry=this::open;worker.postDelayed(retry,Math.min(15000,1000L<<Math.min(attempt++,4)));publish();
         }
@@ -168,7 +195,7 @@ public class CompanionService extends Service {
         void status(String session,boolean active){Boolean previous=running.put(session,active);if(active&&!Boolean.TRUE.equals(previous))failed.remove(session);if(Boolean.TRUE.equals(previous)&&!active&&!failed.contains(session))notifyUser(this,session,"done","");}
         void event(JSONObject e)throws Exception{
             String type=e.optString("type");
-            if(type.equals("ready")){clientId=e.getString("clientId");return;}
+            if(type.equals("ready")){clientId=e.getString("clientId");publish();return;}
             if(type.equals("cancel")){removeApproval(e.optString("eventId"));return;}
             if(type.equals("emit")||type.equals("event")){
                 JSONArray args=e.optJSONArray("args");if(args==null)return;String name=e.optString("event");
@@ -188,7 +215,8 @@ public class CompanionService extends Service {
         void dispose(){disposed=true;if(retry!=null)worker.removeCallbacks(retry);if(poll!=null)worker.removeCallbacks(poll);worker.removeCallbacksAndMessages(this);HybridTransport old=socket;socket=null;if(old!=null)old.close();clearApprovals();for(com.getcapacitor.PluginCall call:answers.values())call.reject("已断开此电脑");answers.clear();}
     }
     @Override public void onDestroy(){
-        stopped=true;instance=null;
+        stopped=true;foreground=false;instance=null;
+        getSharedPreferences(PREFS,MODE_PRIVATE).edit().putLong("lastStoppedAt",System.currentTimeMillis()).putString("lastError",enabled(this)?"后台服务已停止，回到前台将自动恢复；红米/小米请检查自启动及省电策略":"").apply();
         try{network.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}
         worker.post(()->{for(Host h:hosts.values())h.dispose();hosts.clear();worker.removeCallbacksAndMessages(null);if(wake!=null&&wake.isHeld())wake.release();http.dispatcher().executorService().shutdown();http.connectionPool().evictAll();thread.quitSafely();});
         stopForeground(STOP_FOREGROUND_REMOVE);CompanionPlugin.changed("{\"enabled\":false,\"hosts\":[],\"approvals\":[]}");super.onDestroy();

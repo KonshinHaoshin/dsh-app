@@ -46,9 +46,15 @@ try{
  await wait(async()=>{try{return await page.locator('.connection-pill').textContent()==='已连接';}catch{return false;}},'foreground connection');
  await native('Companion','enable');await wait(()=>nativeSocket?.readyState===1,'native event subscription');
  assert((await native('Companion','getState')).running);console.log('Native foreground service and independent socket PASS');
- shell('shell','input','keyevent','3');shell('shell','input','keyevent','223');await wait(async()=>!(await native('Companion','getState')).foreground,'Activity moved to background');
- shell('shell','dumpsys','battery','unplug');shell('shell','dumpsys','deviceidle','force-idle');idleForced=true;
+ await wait(async()=>(await native('Companion','getState')).hosts.some(h=>h.eventsReady),'native approval ownership ready');
+ const cachePrefix='a'.repeat(64),cacheKey=cachePrefix+'.'+'b'.repeat(64),cacheText=JSON.stringify({version:1,savedAt:Date.now(),value:{text:'test-only-private-cache-content'}});
+ await native('SessionCache','set',{key:cacheKey,value:cacheText});assert.equal((await native('SessionCache','get',{key:cacheKey})).value,cacheText);
+ const cipher=execFileSync(adb,['-s',serial,'exec-out','run-as','moe.shelterhub.dsh','cat','files/session-cache/'+cacheKey]);assert(!cipher.includes(Buffer.from('test-only-private-cache-content')));console.log('Native Keystore-encrypted cache persists without plaintext content PASS');
+ await native('SessionCache','set',{key:cacheKey,value:JSON.stringify({version:1,savedAt:Date.now()-8*86400000,value:'expired'})});assert.equal((await native('SessionCache','get',{key:cacheKey})).value,null);await native('SessionCache','removeDevice',{prefix:cachePrefix});console.log('Native cache TTL and removal PASS');
  debuggerSession=await page.context().newCDPSession(page);await debuggerSession.send('Debugger.enable');await debuggerSession.send('Debugger.pause');
+ const beforeRestore=connections;try{execFileSync(adb,['-s',serial,'shell','run-as','moe.shelterhub.dsh','am','stopservice','--user','0','-n','moe.shelterhub.dsh/.CompanionService'],{encoding:'utf8',timeout:20000,stdio:'pipe'});}catch(e){if(!(String(e.stdout)+String(e.stderr)).includes('Service stopped'))throw e;}await wait(()=>!shell('shell','dumpsys','activity','services','moe.shelterhub.dsh').includes('isForeground=true'),'service deliberately stopped');console.log('Test service deliberately stopped with WebView paused');
+ shell('shell','input','keyevent','3');await wait(()=>connections>beforeRestore&&shell('shell','dumpsys','activity','services','moe.shelterhub.dsh').includes('isForeground=true'),'native lifecycle restores service without WebView');console.log('Home restores a stopped foreground service while WebView JS is paused PASS');shell('shell','input','keyevent','223');
+ shell('shell','dumpsys','battery','unplug');shell('shell','dumpsys','deviceidle','force-idle');idleForced=true;
  nativeSocket.send(JSON.stringify({type:'item',id:'events',value:{type:'emit',event:'api-session/status',args:['qa-task',true]}}));
  nativeSocket.send(JSON.stringify({type:'item',id:'events',value:{type:'emit',event:'api-session/status',args:['qa-task',false]}}));
  try{await wait(()=>shell('shell','dumpsys','notification','--noredact').includes('DSH 任务已结束'),'task completion notification');}catch(e){if(debuggerSession)await debuggerSession.send('Debugger.resume');console.log('Notification diagnostic:',await native('Companion','getState'));throw e;}
@@ -66,8 +72,9 @@ try{
  await wait(async()=>(await native('Companion','getState')).approvals.length===0,'settled approval');console.log('Notification navigation and explicit native approval round trip PASS');
  const before=connections;nativeSocket.terminate();await wait(()=>connections>before,'native reconnect');console.log('Native socket reconnect PASS');
  await assert.rejects(native('AppUpdater','download',{url:'https://untrusted.example/app.apk',version:'99.0.0',versionCode:999,size:1,sha256:'0'.repeat(64)}));console.log('Native updater refuses an untrusted URL PASS');
+ await native('Companion','disable');shell('shell','input','keyevent','3');shell('shell','am','start','-W','-n','moe.shelterhub.dsh/.MainActivity');const off=await native('Companion','setup');assert.equal(off.enabled,false);assert.equal(off.running,false);console.log('Explicit background off choice is preserved on setup and Activity resume PASS');
 }finally{
- if(debuggerSession)try{await debuggerSession.send('Debugger.resume');}catch{}
+ if(debuggerSession)try{await debuggerSession.send('Debugger.disable');}catch{}
  if(idleForced)try{shell('shell','dumpsys','deviceidle','unforce');shell('shell','dumpsys','battery','reset');}catch{}
  if(page&&ownsRegistry){try{await native('Companion','disable');await native('DeviceCredentials','remove',{key});const current=(await native('DeviceCredentials','getRegistry')).value;await native('DeviceCredentials','setRegistry',{value:JSON.stringify(JSON.parse(current??'[]').filter(d=>d.key!==key))});}catch{}}
  if(browser)await browser.close();for(const ws of server.clients)ws.terminate();await new Promise(r=>server.close(r));

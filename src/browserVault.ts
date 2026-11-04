@@ -15,6 +15,8 @@ async function encryptionKey(){return loadingKey??=(async()=>{
  return new Promise<CryptoKey>((resolve,reject)=>{const tx=db.transaction('vault','readwrite'),store=tx.objectStore('vault'),r=store.get('key');let key=generated;r.onsuccess=()=>{if(r.result)key=r.result;else store.put(generated,'key');};tx.oncomplete=()=>resolve(key);tx.onabort=tx.onerror=()=>reject(new Error('无法创建配对存储密钥'));});
  })().catch(e=>{loadingKey=undefined;throw e;});}
 export const browserVault={
+ async seal(id:string,value:string){const iv=crypto.getRandomValues(new Uint8Array(12));const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(id)},await encryptionKey(),new TextEncoder().encode(value));return {iv,data};},
+ async open(id:string,entry:{iv:Uint8Array<ArrayBuffer>;data:ArrayBuffer}){return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:entry.iv,additionalData:new TextEncoder().encode(id)},await encryptionKey(),entry.data));},
  async get(id:string){const entry=await read<{iv:Uint8Array<ArrayBuffer>;data:ArrayBuffer}>('token:'+id);if(!entry)return '';try{return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:entry.iv,additionalData:new TextEncoder().encode(id)},await encryptionKey(),entry.data));}catch{throw new Error('无法读取此电脑的配对信息');}},
  async set(id:string,value:string){const iv=crypto.getRandomValues(new Uint8Array(12)),key=await encryptionKey();const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(id)},key,new TextEncoder().encode(value));await write('token:'+id,{iv,data});},
  async remove(id:string){await write('token:'+id,undefined,true);}

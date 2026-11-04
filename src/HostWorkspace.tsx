@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import type {FormEvent,ReactNode} from 'react';
 import {ArrowUp,ArrowUpRight,ArrowLeft,Check,ChevronDown,ChevronRight,Code2,Command,Copy,Folder,Globe,History,Laptop,Link2,LoaderCircle,Menu,MessageSquare,MoreHorizontal,Plus,Radio,RefreshCw,Search,Settings2,ShieldCheck,Square,Terminal,Unplug,Wifi,X} from 'lucide-react';
 import Markdown from 'react-markdown';
@@ -18,6 +18,7 @@ import type {ModelProjection} from './modelSelection';
 import {workspaceOptions,sessionInWorkspace} from './workspaces';
 import {emptyJournal,eventRows,reduceJournal} from './transcript';
 import type {JournalState} from './transcript';
+import {cacheOwner,loadHost,saveHost,loadSession,saveSession,memorySession,rememberSession} from './sessionCache';
 import type {Approval,ConnectionProfile,ConnectionState,MessageRow,ModelCatalog,ModelSelection,Session,WireEvent,Workspace} from './types';
 
 const statusText={disconnected:'未连接',connecting:'正在连接',connected:'已连接',reconnecting:'重新连接中',error:'连接失败'};
@@ -26,8 +27,8 @@ function IconButton({label,children,onClick,className='',disabled=false}:{label:
 function timeLabel(time:number){const delta=Date.now()-time;return delta<60000?'刚刚':delta<3600000?`${Math.floor(delta/60000)} 分钟前`:new Date(time).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});}
 function basename(cwd?:string){return cwd?.split(/[\\/]/).filter(Boolean).at(-1)??'默认工作区';}
 
-type Props={nativeBackground:boolean;nativeApprovals:Approval[];noticeSession:{sessionId:string;sequence:number}|null;theme:string;onThemeChange:(theme:string)=>void;attempt:number;device:SavedDevice;active:boolean;blocked:boolean;initialDraft?:string;otherApprovals:number;onOpenConnections:(draft?:string)=>void;onStatus:(key:string,status:DeviceStatus)=>void};
-export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSession,theme,onThemeChange:setTheme,attempt,device,active,blocked,initialDraft,otherApprovals,onOpenConnections,onStatus}:Props){
+type Props={backgroundWarning?:string;nativeBackground:boolean;nativeApprovals:Approval[];noticeSession:{sessionId:string;sequence:number}|null;theme:string;onThemeChange:(theme:string)=>void;attempt:number;device:SavedDevice;active:boolean;blocked:boolean;initialDraft?:string;otherApprovals:number;onOpenConnections:(draft?:string)=>void;onStatus:(key:string,status:DeviceStatus)=>void};
+export default function HostWorkspace({backgroundWarning,nativeBackground,nativeApprovals,noticeSession,theme,onThemeChange:setTheme,attempt,device,active,blocked,initialDraft,otherApprovals,onOpenConnections,onStatus}:Props){
   const profile=device;const settings=blocked;
   const statusCallback=useRef(onStatus);statusCallback.current=onStatus;
   const hostName=device.key==='empty'?'':deviceName(device);
@@ -37,9 +38,14 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   const [state,setState]=useState<ConnectionState>('disconnected');
   const [transport,setTransport]=useState<'relay'|'p2p'|'lan'>(device.mode==='lan'?'lan':'relay');
   const [connectionError,setConnectionError]=useState('');
-  const [sessions,setSessions]=useState<Session[]>([]);
+  const cacheScope=cacheOwner(device);
+  const [hostBox,setHostBox]=useState<{owner:string;sessions:Session[];workspaces:Workspace[];sessionsFresh:boolean;workspacesFresh:boolean}>(()=>({owner:cacheScope,sessions:[],workspaces:[],sessionsFresh:false,workspacesFresh:false}));
+  const sessions=hostBox.owner===cacheScope?hostBox.sessions:[];
+  function setSessions(update:Session[]|((previous:Session[])=>Session[])){setHostBox(box=>box.owner!==cacheScope?box:{...box,sessions:typeof update==='function'?update(box.sessions):update,sessionsFresh:true});}
   const [selected,setSelected]=useState(()=>device.key==='empty'?'':localStorage.getItem('dsh.session.'+device.key)??'');
-  const [journal,setJournal]=useState<JournalState>(emptyJournal);
+  const [journalBox,setJournalBox]=useState<{owner:string;sessionId:string;value:JournalState;confirmed:boolean}>(()=>({owner:cacheScope,sessionId:selected,value:memorySession(device,selected)??emptyJournal(),confirmed:false}));
+  const journal=journalBox.owner===cacheScope&&journalBox.sessionId===selected?journalBox.value:emptyJournal();
+  function setJournal(update:JournalState|((previous:JournalState)=>JournalState),confirmed=false){setJournalBox(box=>box.owner!==cacheScope||box.sessionId!==selected?box:{...box,value:typeof update==='function'?update(box.value):update,confirmed:box.confirmed||confirmed});}
   const [draft,setDraft]=useState(initialDraft??'');
   const [attachments,setAttachments]=useState<PendingAttachment[]>([]);const attachmentsRef=useRef(attachments);attachmentsRef.current=attachments;
   const [uploadStatus,setUploadStatus]=useState('');const fileInput=useRef<HTMLInputElement>(null);
@@ -58,7 +64,8 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   const selectionOperation=useRef(0);
   const [approvals,setApprovals]=useState<Approval[]>([]);
   const [resolving,setResolving]=useState('');
-  const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
+  const workspaces=hostBox.owner===cacheScope?hostBox.workspaces:[];
+  function setWorkspaces(update:Workspace[]|((previous:Workspace[])=>Workspace[])){setHostBox(box=>box.owner!==cacheScope?box:{...box,workspaces:typeof update==='function'?update(box.workspaces):update,workspacesFresh:true});}
   const [workspaceKey,setWorkspaceKey]=useState('');
   const [workspacePicker,setWorkspacePicker]=useState(false);
   const [addingWorkspace,setAddingWorkspace]=useState(false);
@@ -74,13 +81,43 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   const reasoning=reasoningFor(catalog,selection);
   const reasoningEffort=selection?.reasoningEffort??reasoning?.defaultEffort??'';
   const rows=useMemo(()=>eventRows(journal.events),[journal.events]);
+  const chatRows=useMemo(()=>rows.filter(row=>row.kind!=='tool'),[rows]);
   const refreshSessions=useRef<()=>void>(()=>{});
+  const pendingCache=useRef(new Map<string,{device:SavedDevice;sessionId:string;journal:JournalState;flushed:boolean}>());
+  const flushCachedSession=(key:string)=>{const entry=pendingCache.current.get(key);if(entry&&!entry.flushed){entry.flushed=true;void saveSession(entry.device,entry.sessionId,entry.journal);}};
   const online=state==='connected';
-  const running=current?.running??false;
+  const running=online&&(current?.running??false);
   const options=workspaceOptions(workspaces,sessions);
   const activeWorkspace=options.find(w=>w.key===workspaceKey);
   const currentWorkspace=current?options.find(w=>w.path===current.cwd):activeWorkspace;
   const createRequest=activeWorkspace?.workspaceId?{workspaceId:activeWorkspace.workspaceId}:activeWorkspace?{cwd:activeWorkspace.path}:{};
+
+  useLayoutEffect(()=>{
+    let alive=true;setHostBox({owner:cacheScope,sessions:[],workspaces:[],sessionsFresh:false,workspacesFresh:false});
+    void loadHost(device).then(value=>{if(alive&&value)setHostBox(box=>box.owner!==cacheScope?box:{...box,sessions:box.sessionsFresh?box.sessions:value.sessions,workspaces:box.workspacesFresh?box.workspaces:value.workspaces});});
+    return()=>{alive=false;};
+  },[cacheScope]);
+  useEffect(()=>{
+    if(hostBox.owner!==cacheScope||!hostBox.sessionsFresh)return;
+    const timer=setTimeout(()=>void saveHost(device,hostBox.sessions,hostBox.workspaces),500);return()=>clearTimeout(timer);
+  },[hostBox,cacheScope]);
+  useLayoutEffect(()=>{
+    let alive=true;setJournalBox({owner:cacheScope,sessionId:selected,value:memorySession(device,selected)??emptyJournal(),confirmed:false});
+    void loadSession(device,selected).then(value=>{if(alive&&value)setJournalBox(box=>box.owner!==cacheScope||box.sessionId!==selected||box.confirmed?box:{...box,value});});
+    return()=>{alive=false;};
+  },[cacheScope,selected]);
+  useEffect(()=>{
+    if(journalBox.owner!==cacheScope||journalBox.sessionId!==selected||!journalBox.confirmed||!selected)return;
+    rememberSession(device,selected,journal);
+    const key=JSON.stringify([cacheScope,selected]);pendingCache.current.set(key,{device,sessionId:selected,journal,flushed:false});
+    const timer=setTimeout(()=>flushCachedSession(key),500);return()=>clearTimeout(timer);
+  },[journal.events,journal.cursor,journal.hasMore,journalBox.confirmed,cacheScope,selected]);
+  useEffect(()=>{const key=JSON.stringify([cacheScope,selected]);return()=>{flushCachedSession(key);pendingCache.current.delete(key);};},[cacheScope,selected]);
+  useEffect(()=>{
+    const save=()=>{for(const key of pendingCache.current.keys())flushCachedSession(key);};const hidden=()=>{if(document.visibilityState==='hidden')save();};
+    document.addEventListener('visibilitychange',hidden);window.addEventListener('dsh-pause',save);
+    return()=>{document.removeEventListener('visibilitychange',hidden);window.removeEventListener('dsh-pause',save);save();};
+  },[]);
 
   useEffect(()=>()=>{for(const a of attachmentsRef.current)if(a.preview)URL.revokeObjectURL(a.preview);},[]);
   function addAttachments(files:File[]){try{validateAttachments([...attachments.map(a=>a.file),...files]);setAttachments(previous=>[...previous,...files.map(file=>({id:crypto.randomUUID(),file,...IMAGE_TYPES.includes(file.type)?{preview:URL.createObjectURL(file)}:{}}))]);setError('');}catch(e){setError((e as Error).message);}}
@@ -142,19 +179,20 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   useEffect(()=>{if(nativeBackground)setApprovals(nativeApprovals);},[nativeBackground,nativeApprovals,online]);
   useEffect(()=>{if(noticeSession){setSelected(noticeSession.sessionId);setView('chat');}},[noticeSession]);
   useEffect(()=>{
-    setJournal(emptyJournal());setPending(null);setError('');setModelProjection(null);setSelectingModel(false);selectionOperation.current++;followScroll.current=true;
+    setPending(null);setError('');setModelProjection(null);setSelectingModel(false);selectionOperation.current++;followScroll.current=true;
   },[selected,online,client]);
   useEffect(()=>{
+    setJournalBox(box=>box.owner===cacheScope&&box.sessionId===selected?{...box,confirmed:false}:box);
     if(!online||!selected||!active)return;
     return client.subscribe('session/follow',{address:{kind:'session',sessionId:selected},assistantStream:true,maxMessages:30},item=>{
       if(item.type==='snapshot')setModelProjection(readModelProjection(item.projections));
       else if(item.type==='event')setModelProjection(previous=>advanceModelProjection(previous??readModelProjection(current?.projections),item.event));
-      setJournal(previous=>{try{return reduceJournal(previous,item);}catch(e){setError((e as Error).message);return previous;}});
+      setJournal(previous=>{try{return reduceJournal(previous,item);}catch(e){setError((e as Error).message);return previous;}},item.type==='snapshot');
       const events=item.type==='snapshot'?(item.records??[]).map((r:any)=>r.event):item.type==='event'?[item.event]:[];
       if(events.some((e:any)=>e?.type==='turn/start'))setSessions(s=>s.map(row=>row.sessionId===selected?{...row,running:true}:row));
       if(events.some((e:any)=>e?.type==='turn/end')){setSessions(s=>s.map(row=>row.sessionId===selected?{...row,running:false}:row));void refresh();}
     },e=>setError(e.message));
-  },[selected,online,client,active]);
+  },[selected,online,client,active,cacheScope]);
   useEffect(()=>{
     if(pending&&journal.events.some(e=>(e.data.source as any)?.rpcId===pending.id))setPending(null);
   },[journal.events,pending]);
@@ -248,13 +286,15 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
       <header className="topbar"><div className="topbar-title"><IconButton className="mobile-only" label="打开会话列表" onClick={()=>setDrawer(true)}><Menu size={21}/></IconButton><span className="desktop-only breadcrumb">工作台<ChevronRight size={14}/></span><span className="topbar-session">{hostName&&<button className="host-caption" onClick={()=>setSettings(true)} aria-label="切换电脑"><Laptop size={11}/>{hostName}<ChevronDown size={10}/></button>}<span>{current?.title||'新会话'}</span></span>{running&&<span className="pill running"><span className="running-dot"/>进行中</span>}</div><div className="topbar-actions"><button className={'connection-pill '+(online?'is-online':'')} onClick={()=>setSettings(true)}><span className={'status-dot '+(online?'online':'')}/><span>{statusText[state]}</span></button><IconButton label={theme==='light'?'切换深色外观':'切换浅色外观'} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Settings2 size={18}/></IconButton></div></header>
       <div className="view-tabs"><button className={view==='chat'?'active':''} onClick={()=>setView('chat')}><MessageSquare size={15}/>对话</button><button className={view==='activity'?'active':''} onClick={()=>setView('activity')}><Terminal size={15}/>执行记录{tools.length>0&&<span className="tab-count">{tools.length}</span>}</button><span className="tabs-spacer"/><span className="desktop-only remote-label"><Radio size={13}/>远程工作台</span></div>
       {(state==='reconnecting'||state==='error')&&<div className="connection-banner" role="status"><Wifi size={16}/><span>{connectionError||statusText[state]}</span><button onClick={()=>client.reconnect()}>重连</button></div>}
+      {backgroundWarning&&<div className="connection-banner" role="status"><Radio size={15}/><span>{backgroundWarning}</span><button onClick={()=>setSettings(true)}>设置</button></div>}
+      {!!journal.events.length&&!journalBox.confirmed&&<div className="cache-status" role="status"><History size={12}/>{online?'缓存 · 正在同步':'缓存 · 等待连接'}</div>}
       <div className="conversation" ref={transcript} onScroll={()=>{const el=transcript.current;if(el)followScroll.current=el.scrollHeight-el.scrollTop-el.clientHeight<100;}}>
-        {view==='chat'&&rows.length===0&&!journal.live&&!pending?<div className="welcome welcome-minimal">
+        {view==='chat'&&chatRows.length===0&&!journal.live&&!pending&&!running?<div className="welcome welcome-minimal">
           <Logo/>
           {!online&&<button className="connect-prompt" onClick={()=>setSettings(true)}><Link2 size={15}/>连接 DSH</button>}
         </div>:view==='chat'?<div className="message-list">
           {journal.hasMore&&<button className="load-older" disabled={older} onClick={()=>void loadOlder()}>{older?<LoaderCircle className="spin" size={15}/>:<History size={15}/>}查看更早的消息</button>}
-          {rows.map(row=><Message key={row.id} row={row} client={client} sessionId={selected} online={online} onCopy={text=>void navigator.clipboard.writeText(text).then(()=>setToast('已复制')).catch(()=>setError('无法访问剪贴板'))}/>)}
+          {chatRows.map(row=><Message key={row.id} row={row} client={client} sessionId={selected} online={online} onCopy={text=>void navigator.clipboard.writeText(text).then(()=>setToast('已复制')).catch(()=>setError('无法访问剪贴板'))}/>)}
           {pending&&!journal.events.some(e=>(e.data.source as any)?.rpcId===pending.id)&&<Message row={{id:pending.id,kind:'user',text:pending.text,label:pending.accepted?'已受理':'发送中',pending:true}}/>}
           {journal.live&&<Message row={{id:'live',kind:'assistant',text:journal.live,pending:true}}/>}
           {running&&!journal.live&&<div className="working-indicator" role="status"><LoaderCircle className="spin" size={16}/>DSH 正在处理任务…</div>}

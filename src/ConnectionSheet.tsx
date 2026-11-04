@@ -22,6 +22,7 @@ export default function ConnectionSheet({background,backgroundError,onBackground
   return <>
     <div className="sheet-top"><h2 id="settings-title">连接</h2><button className="icon-button" aria-label="关闭连接设置" onClick={onClose}><X size={20}/></button></div>
     <UpdatePanel/>
+    <BackgroundPanel state={background} error={backgroundError} onToggle={onBackgroundToggle}/>
     {devices.length?<DeviceList devices={devices} activeKey={activeKey} statuses={statuses} busy={busy} onSelect={onSelect} onToggle={onToggle} onForget={onForget} onRename={onRename} onError={setLocalError}/>:<p className="pair-caption">扫描电脑上的 DSH 配对码</p>}
     <button className="primary-button scan-connect" onClick={()=>void scan()} disabled={busy}>{busy?<LoaderCircle size={20} className="spin"/>:<QrCode size={21}/>} {busy?'正在连接…':devices.length?'添加电脑 · 扫一扫':'扫一扫'}</button>
     {(localError||error)&&<div className="form-status" role="alert">{localError||error}</div>}
@@ -34,7 +35,6 @@ export default function ConnectionSheet({background,backgroundError,onBackground
       <label htmlFor="pairing-token">配对密钥</label><input id="pairing-token" type="password" value={draft.token} onChange={e=>setDraft(p=>({...p,token:e.target.value}))} required minLength={24} autoComplete="off"/>
       <button className="primary-button connect-submit" disabled={busy} type="submit"><Link2 size={16}/>连接</button>
     </form>}
-    <BackgroundPanel state={background} error={backgroundError} onToggle={onBackgroundToggle}/>
 
   </>;
 }

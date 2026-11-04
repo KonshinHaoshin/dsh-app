@@ -1,6 +1,6 @@
 {
   "name": "dsh-mobile",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,10 +13,13 @@
     "android:open": "cap open android",
     "android:build": "npm run android:sync && node scripts/build-android.mjs",
     "ios:sync": "npm run build && node scripts/sync-native.mjs ios",
-    "check": "npm test && npm run build"
+    "check": "npm test && npm run build",
+    "android:release": "npm run android:build && node scripts/prepare-android-release.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/app-launcher": "^7.0.4",
     "@capacitor/barcode-scanner": "^2.2.6",
     "@capacitor/core": "^7.4.0",
     "@capacitor/ios": "^7.4.0",

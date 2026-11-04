@@ -6,11 +6,14 @@ import remarkGfm from 'remark-gfm';
 import {HarnessConnection} from './connection';
 import ConnectionSheet from './ConnectionSheet';
 import WorkspaceSheet from './WorkspaceSheet';
+import metadata from '../package.json';
+import {readModelProjection,advanceModelProjection,reasoningFor,modelChoice} from './modelSelection';
+import type {ModelProjection} from './modelSelection';
 import {workspaceOptions,sessionInWorkspace} from './workspaces';
 import {parsePairingLink,redeemPairing} from './pairing';
 import {emptyJournal,eventRows,reduceJournal} from './transcript';
 import type {JournalState} from './transcript';
-import type {Approval,ConnectionProfile,ConnectionState,MessageRow,ModelCatalog,Session,WireEvent,Workspace} from './types';
+import type {Approval,ConnectionProfile,ConnectionState,MessageRow,ModelCatalog,ModelSelection,Session,WireEvent,Workspace} from './types';
 
 const DEFAULT_URL='https://dshapi.shelterhub.moe';
 const statusText={disconnected:'未连接',connecting:'正在连接',connected:'已连接',reconnecting:'重新连接中',error:'连接失败'};
@@ -41,7 +44,9 @@ export default function App(){
   const [search,setSearch]=useState('');
   const [error,setError]=useState('');
   const [catalog,setCatalog]=useState<ModelCatalog>({groups:[]});
-  const [model,setModel]=useState('');
+  const [modelProjection,setModelProjection]=useState<ModelProjection|null>(null);
+  const [selectingModel,setSelectingModel]=useState(false);
+  const selectionOperation=useRef(0);
   const [approvals,setApprovals]=useState<Approval[]>([]);
   const [resolving,setResolving]=useState('');
   const [theme,setTheme]=useState(()=>localStorage.getItem('dsh.theme')??'light');
@@ -56,6 +61,10 @@ export default function App(){
   const modal=useRef<HTMLElement>(null);const workspaceModal=useRef<HTMLElement>(null);const sidebar=useRef<HTMLElement>(null);const closeOnConnect=useRef(false);
   const submission=useRef<{id:string;text:string;sessionId:string}|null>(null);
   const current=sessions.find(s=>s.sessionId===selected);
+  const selection=(modelProjection??readModelProjection(current?.projections)).next??catalog.default??catalog.defaultSelection??null;
+  const model=selection?selection.provider+'\u001f'+selection.model:'';
+  const reasoning=reasoningFor(catalog,selection);
+  const reasoningEffort=selection?.reasoningEffort??reasoning?.defaultEffort??'';
   const rows=eventRows(journal.events);
   const online=state==='connected';
   const running=current?.running??false;
@@ -105,9 +114,11 @@ export default function App(){
     return()=>{active=false;unsub();workspaceUnsub();clearInterval(timer);};
   },[online,client]);
   useEffect(()=>{
-    setJournal(emptyJournal());setPending(null);setError('');setModel('');followScroll.current=true;
+    setJournal(emptyJournal());setPending(null);setError('');setModelProjection(null);setSelectingModel(false);selectionOperation.current++;followScroll.current=true;
     if(!online||!selected)return;
     return client.subscribe('session/follow',{address:{kind:'session',sessionId:selected},assistantStream:true,maxMessages:100},item=>{
+      if(item.type==='snapshot')setModelProjection(readModelProjection(item.projections));
+      else if(item.type==='event')setModelProjection(previous=>advanceModelProjection(previous??readModelProjection(current?.projections),item.event));
       setJournal(previous=>{try{return reduceJournal(previous,item);}catch(e){setError((e as Error).message);return previous;}});
       const events=item.type==='snapshot'?(item.records??[]).map((r:any)=>r.event):item.type==='event'?[item.event]:[];
       if(events.some((e:any)=>e?.type==='turn/start'))setSessions(s=>s.map(row=>row.sessionId===selected?{...row,running:true}:row));
@@ -153,27 +164,32 @@ export default function App(){
   async function createSession(){
     if(!online){setSettings(true);return;}
     setBusy(true);setError('');setDraft('');
-    try{const result=await client.call('session/create',createRequest);setSessions(items=>[{sessionId:result.sessionId,title:'新会话',cwd:activeWorkspace?.path,updatedAt:Date.now(),running:false,blank:true},...items.filter(s=>s.sessionId!==result.sessionId)]);setSelected(result.sessionId);setDrawer(false);setView('chat');void refresh();}
+    try{const intended=!selected?modelProjection?.next:null;const result=await client.call('session/create',createRequest);setSessions(items=>[{sessionId:result.sessionId,title:'新会话',cwd:activeWorkspace?.path,updatedAt:Date.now(),running:false,blank:true},...items.filter(s=>s.sessionId!==result.sessionId)]);setSelected(result.sessionId);setDrawer(false);setView('chat');if(intended){const choice=await client.call<{selected:ModelSelection}>('session/selectModel',{sessionId:result.sessionId,...intended});setCatalog(previous=>({...previous,default:choice.selected}));}void refresh();}
     catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   async function submit(event:FormEvent){
-    event.preventDefault();if(!draft.trim()||submitting)return;if(!online){setSettings(true);return;}
+    event.preventDefault();if(!draft.trim()||submitting||selectingModel)return;if(!online){setSettings(true);return;}
     setSubmitting(true);setError('');
     const text=draft.trim();const previous=submission.current;
     const requestId=previous?.text===text&&previous.sessionId===selected?previous.id:crypto.randomUUID();
     try{
       let sessionId=selected;
-      if(!sessionId){const result=await client.call('session/create',createRequest);sessionId=result.sessionId;setSelected(sessionId);void refresh();}
+      if(!sessionId){const intended=modelProjection?.next;const result=await client.call('session/create',createRequest);sessionId=result.sessionId;setSelected(sessionId);if(intended){const choice=await client.call<{selected:ModelSelection}>('session/selectModel',{sessionId,...intended});setCatalog(previous=>({...previous,default:choice.selected}));}void refresh();}
       submission.current={id:requestId,text,sessionId};setPending({id:requestId,text,accepted:false});followScroll.current=true;
       await client.call('session/prompt',{sessionId,requestId,content:[{type:'text',text}],mode:running?'steer':'queue',clientTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
       setPending(p=>p?.id===requestId?{...p,accepted:true}:p);submission.current=null;setDraft('');void refresh();
     }catch(e){setError((e as Error).message);}finally{setSubmitting(false);}
   }
   async function stop(){try{await client.call('session/cancel',{sessionId:selected});setToast('已请求停止当前任务');void refresh();}catch(e){setError((e as Error).message);}}
-  async function changeModel(value:string){
-    const [provider,modelId]=value.split('\u001f');if(!selected)return;
-    try{await client.call('session/selectModel',{sessionId:selected,provider,model:modelId});setModel(value);setToast('模型已切换');}catch(e){setError((e as Error).message);}
+  async function changeSelection(next:ModelSelection){
+    if(!selected){setModelProjection({lastUsed:null,next});return;}
+    const target=selected,operation=++selectionOperation.current;setSelectingModel(true);setError('');
+    try{const result=await client.call<{selected:ModelSelection}>('session/selectModel',{sessionId:target,...next});if(selectedRef.current!==target||selectionOperation.current!==operation)return;setModelProjection(previous=>({...previous??{lastUsed:null},next:result.selected}));setCatalog(previous=>({...previous,default:result.selected}));}
+    catch(e){if(selectedRef.current===target&&selectionOperation.current===operation)setError((e as Error).message);}
+    finally{if(selectionOperation.current===operation)setSelectingModel(false);}
   }
+  function changeModel(value:string){const [provider,modelId]=value.split('\u001f');if(provider&&modelId)void changeSelection(modelChoice(catalog,provider,modelId,selection));}
+  function changeEffort(value:string){if(selection&&reasoning?.efforts.some(e=>e.id===value))void changeSelection({...selection,reasoningEffort:value});}
   async function decide(approval:Approval,allow:boolean){
     setResolving(approval.eventId);
     try{await client.call('$events/result',{clientId:approval.clientId,eventId:approval.eventId,outcome:{kind:'result',value:allow?'allowed-once':'rejected'}});setApprovals(a=>a.filter(x=>x.eventId!==approval.eventId));}
@@ -202,7 +218,7 @@ export default function App(){
         </button>)}
         {!visible.length&&<div className="sidebar-empty">{online?'还没有会话，开始一项新工作。':'连接 DSH 后，你的会话会出现在这里。'}</div>}
       </nav>
-      <div className="sidebar-bottom"><button className="device-row" onClick={()=>setSettings(true)}><span className="device-icon"><Laptop size={18}/></span><span><strong>{online?client.name:'连接你的 DSH'}</strong><small><span className={'status-dot '+(online?'online':'')}/>{online?profile.mode==='lan'?'局域网连接':'公网连接':'手机与电脑，保持同步'}</small></span><Settings2 size={17}/></button><div className="sidebar-footnote"><span>DSH Companion</span><span>v0.2</span></div></div>
+      <div className="sidebar-bottom"><button className="device-row" onClick={()=>setSettings(true)}><span className="device-icon"><Laptop size={18}/></span><span><strong>{online?client.name:'连接你的 DSH'}</strong><small><span className={'status-dot '+(online?'online':'')}/>{online?profile.mode==='lan'?'局域网连接':'公网连接':'手机与电脑，保持同步'}</small></span><Settings2 size={17}/></button><div className="sidebar-footnote"><span>DSH Companion</span><span>v{metadata.version}</span></div></div>
     </aside>
     <main className="main-pane" inert={settings||workspacePicker||drawer}>
       <header className="topbar"><div className="topbar-title"><IconButton className="mobile-only" label="打开会话列表" onClick={()=>setDrawer(true)}><Menu size={21}/></IconButton><span className="desktop-only breadcrumb">工作台<ChevronRight size={14}/></span><span>{current?.title||'新会话'}</span>{running&&<span className="pill running"><span className="running-dot"/>进行中</span>}</div><div className="topbar-actions"><button className={'connection-pill '+(online?'is-online':'')} onClick={()=>setSettings(true)}><span className={'status-dot '+(online?'online':'')}/><span>{statusText[state]}</span></button><IconButton label={theme==='light'?'切换深色外观':'切换浅色外观'} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Settings2 size={18}/></IconButton></div></header>
@@ -225,7 +241,7 @@ export default function App(){
         {error&&<div className="error-message" role="alert"><span>{error}</span><IconButton label="关闭提示" onClick={()=>setError('')}><X size={16}/></IconButton></div>}
         <form className="composer" onSubmit={submit}>
           <textarea ref={composer} aria-label="发送给 DSH 的消息" placeholder={running?'补充说明，调整任务方向…':'给 DSH 一个任务，或接着聊…'} value={draft} onChange={e=>setDraft(e.target.value)} rows={2} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia('(min-width: 768px)').matches){e.preventDefault();void submit(e);}}}/>
-          <div className="composer-toolbar"><div className="composer-context"><button type="button" className="context-button" aria-label="选择会话工作区" onClick={openWorkspaces}><Folder size={15}/><span>{currentWorkspace?.title??'工作区'}</span><ChevronDown size={12}/></button><span className="toolbar-divider"/><label className="model-select"><span className="model-dot"/><select aria-label="选择模型" value={model} disabled={!online||!selected||!catalog.groups.length} onChange={e=>void changeModel(e.target.value)}><option value="">会话默认模型</option>{catalog.groups.map(group=><optgroup key={group.id} label={group.label??group.name??group.id}>{group.models.map(m=><option key={m.id} value={group.id+'\u001f'+m.id}>{m.label??m.name??m.id}</option>)}</optgroup>)}</select><ChevronDown size={12}/></label></div><div className="composer-send">{running&&<IconButton label="停止任务" className="stop-button" onClick={()=>void stop()} disabled={!online}><Square size={15} fill="currentColor"/></IconButton>}<button className="send-button" type="submit" aria-label="发送消息" disabled={!draft.trim()||submitting}>{submitting?<LoaderCircle size={19} className="spin"/>:<ArrowUp size={20}/>}</button></div></div>
+          <div className="composer-toolbar"><div className="composer-context"><button type="button" className="context-button" aria-label="选择会话工作区" onClick={openWorkspaces}><Folder size={15}/><span>{currentWorkspace?.title??'工作区'}</span><ChevronDown size={12}/></button><span className="toolbar-divider"/><label className="model-select"><span className="model-dot"/><select aria-label="选择模型" value={model} disabled={!online||selectingModel||!catalog.groups.length} onChange={e=>changeModel(e.target.value)}><option value="">会话默认模型</option>{catalog.groups.map(group=><optgroup key={group.id} label={group.label??group.name??group.id}>{group.models.map(m=><option key={m.id} value={group.id+'\u001f'+m.id}>{m.label??m.name??m.id}</option>)}</optgroup>)}</select><ChevronDown size={12}/></label>{reasoning?.efforts.length? <label className="model-select effort-select" title="推理强度"><select aria-label="推理强度" value={reasoningEffort} disabled={!online||selectingModel} onChange={e=>changeEffort(e.target.value)}>{!reasoningEffort&&<option value="">默认强度</option>}{reasoning.efforts.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select><ChevronDown size={12}/></label>:null}</div><div className="composer-send">{running&&<IconButton label="停止任务" className="stop-button" onClick={()=>void stop()} disabled={!online}><Square size={15} fill="currentColor"/></IconButton>}<button className="send-button" type="submit" aria-label="发送消息" disabled={!draft.trim()||submitting||selectingModel}>{submitting?<LoaderCircle size={19} className="spin"/>:<ArrowUp size={20}/>}</button></div></div>
         </form>
       </div>
       <nav className="mobile-nav" aria-label="主要导航"><button className={view==='chat'?'active':''} onClick={()=>setView('chat')}><MessageSquare size={20}/><span>对话</span></button><button className={view==='activity'?'active':''} onClick={()=>setView('activity')}><Terminal size={20}/><span>执行</span></button><button onClick={()=>setDrawer(true)}><History size={20}/><span>会话</span></button><button onClick={()=>setSettings(true)}><Laptop size={20}/><span>连接</span></button></nav>

@@ -45,6 +45,7 @@ public class DeviceCredentialsPlugin extends Plugin {
                 if (entries.getJSONObject(i).has("token")) throw new IllegalArgumentException();
             }
             if (!getContext().getSharedPreferences("dsh-device-registry", Context.MODE_PRIVATE).edit().putString("value", value).commit()) throw new IllegalStateException();
+            if(MainActivity.visible)CompanionService.ensureRunning(getContext());
             call.resolve();
         } catch (Exception ignored) {
             call.reject("无法保存电脑列表，请稍后重试");

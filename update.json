@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "appId": "moe.shelterhub.dsh",
-  "version": "0.7.0",
-  "versionCode": 8,
-  "notes": "新增公网 WebRTC P2P 直连：先通过中继连接，后台尝试打洞；成功后自动切换，失败或断线时自动回退中继。\nAndroid 原生后台服务支持 P2P 和回退，锁屏仍接收任务结束和审批通知；保留原有配对和审批。\n传输切换保留会话序号、确认和去重，避免重复分派已接收指令；支持大附件分块传输。\n连接页显示 P2P 直连或中继。电脑端需更新配套插件至 v0.5.0，无需重新扫码或更换中继密钥。",
+  "version": "0.8.0",
+  "versionCode": 9,
+  "notes": "对话页不再显示 write/edit/pwsh 等工具卡片，完整工具详情保留在执行记录。\n新增加密本地会话缓存：先显示近期记录，再同步电脑端最新快照；限制大小和有效期，移除电脑时清除缓存。\n首次配对引导开启 Android 后台通知；已授权且已启用的连接由原生生命周期恢复，不依赖页面脚本。用户明确关闭后保持关闭。\n后台服务状态与审批订阅按电脑分别核对；新增进程退出诊断和红米/小米自启动、省电策略入口。\n保留 P2P 直连、中继回退、后台任务和审批通知。红米 K70 仍需在系统设置允许 DSH 自启动并将省电策略设为无限制。",
   "android": {
-    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.7.0/releases/v0.7.0/dsh-mobile-0.7.0-debug.apk",
-    "sha256": "e4d314ce12bd449e2bab1fcfce7886f078e0cd3e101d022457fada9c5977897b",
-    "size": 82953271
+    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.8.0/releases/v0.8.0/dsh-mobile-0.8.0-debug.apk",
+    "sha256": "ff42508f4caecaaa03dbf1c07a6eaa100ac0c72a1013128ad212e55bccfe1287",
+    "size": 82974491
   }
 }

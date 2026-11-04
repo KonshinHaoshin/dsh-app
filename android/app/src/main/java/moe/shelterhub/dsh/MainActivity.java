@@ -13,7 +13,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DeviceCredentialsPlugin.class);
         registerPlugin(CompanionPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
+        registerPlugin(SessionCachePlugin.class);
         super.onCreate(savedInstanceState);
+        CompanionService.captureLastExit(this);
         getWindow().setStatusBarColor(Color.WHITE);
         getWindow().setNavigationBarColor(Color.WHITE);
         int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
@@ -22,11 +24,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    public void onStart() { super.onStart(); visible = true; }
+    public void onStart() { super.onStart(); visible = true; CompanionService.ensureRunning(this); }
     @Override
-    public void onResume() { super.onResume(); visible = true; }
+    public void onResume() { super.onResume(); visible = true; CompanionService.ensureRunning(this); }
     @Override
-    public void onPause() { visible = false; super.onPause(); }
+    public void onPause() { CompanionService.ensureRunning(this); visible = false; super.onPause(); }
     @Override
     public void onStop() { visible = false; super.onStop(); }
     @Override

@@ -7,6 +7,11 @@ export class HarnessConnection {
   private pending=new Map<string,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   private streams=new Map<string,Subscription>();
   private retry?:ReturnType<typeof setTimeout>;
+  private heartbeat?:ReturnType<typeof setInterval>;
+  private lastFrame=0;
+  private pongSupported=false;
+  private wake=()=>{if(!this.disposed&&Date.now()-this.lastFrame>15000)this.reconnect();};
+  private visible=()=>{if(document.visibilityState==='visible')this.wake();};
   private handshake?:ReturnType<typeof setTimeout>;
   private disposed=true;
   private attempts=0;
@@ -14,9 +19,10 @@ export class HarnessConnection {
   name='';
   onState?:(state:ConnectionState,error?:string)=>void;
   private setState(state:ConnectionState,error?:string){this.state=state;this.onState?.(state,error);}
-  connect(profile:ConnectionProfile){this.disconnect();this.profile=profile;this.disposed=false;this.attempts=0;this.open();}
+  connect(profile:ConnectionProfile){this.disconnect();this.profile=profile;this.disposed=false;this.attempts=0;window.addEventListener('online',this.wake);window.addEventListener('dsh-resume',this.wake);document.addEventListener('visibilitychange',this.visible);this.open();}
   private open(){
     if(this.disposed||!this.profile)return;
+    clearInterval(this.heartbeat);this.pongSupported=false;
     this.setState(this.attempts?'reconnecting':'connecting');
     let url:URL;
     try{
@@ -32,10 +38,11 @@ export class HarnessConnection {
     ws.onmessage=event=>{
       if(this.ws!==ws)return;
       try{
-        const frame:Frame=JSON.parse(event.data);
+        const frame:Frame=JSON.parse(event.data);this.lastFrame=Date.now();if(frame.type==='pong'){this.pongSupported=true;return;}
         if(frame.type==='ready'){
           if(frame.protocol!==1)throw new Error('服务器协议版本不兼容');
           clearTimeout(this.handshake);this.attempts=0;this.name=frame.name??'DSH';this.setState('connected');
+          this.heartbeat=setInterval(()=>{if(this.ws!==ws)return;if(this.pongSupported&&Date.now()-this.lastFrame>65000){this.reconnect();return;}this.send({type:'ping'});},20000);this.send({type:'ping'});
           for(const [id,stream]of this.streams)this.send({type:'open',id,endpoint:stream.endpoint,params:stream.params});
         }else if(frame.id){
           const stream=this.streams.get(frame.id);
@@ -52,11 +59,11 @@ export class HarnessConnection {
     ws.onerror=()=>{};
     ws.onclose=event=>{
       if(this.ws!==ws)return;
-      clearTimeout(this.handshake);
+      clearTimeout(this.handshake);clearInterval(this.heartbeat);
       for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(new Error('连接已断开；请检查会话后重试'));}this.pending.clear();
       if(this.disposed)return;
-      if(event.code===1008){this.setState('error',event.reason||'配对失败，请检查设备和密钥');return;}
-      this.attempts++;this.setState('reconnecting','连接已断开，正在重试');
+      if(event.code===1008&&this.profile?.mode!=='public'){this.setState('error',event.reason||'配对失败，请检查设备和密钥');return;}
+      this.attempts++;this.setState('reconnecting',event.code===1008?'电脑暂不可用，正在重试；已保留配对信息':'连接已断开，正在自动恢复');
       this.retry=setTimeout(()=>this.open(),Math.min(1000*2**Math.min(this.attempts-1,4),15000));
     };
   }
@@ -76,7 +83,7 @@ export class HarnessConnection {
     return()=>{this.streams.delete(id);this.send({type:'cancel',id});};
   }
   disconnect(){
-    this.disposed=true;clearTimeout(this.retry);clearTimeout(this.handshake);this.ws?.close();this.ws=undefined;
+    this.disposed=true;window.removeEventListener('online',this.wake);window.removeEventListener('dsh-resume',this.wake);document.removeEventListener('visibilitychange',this.visible);clearInterval(this.heartbeat);clearTimeout(this.retry);clearTimeout(this.handshake);this.ws?.close();this.ws=undefined;
     for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(new Error('连接已关闭'));}this.pending.clear();this.streams.clear();this.setState('disconnected');
   }
   reconnect(){if(this.profile)this.connect(this.profile);}

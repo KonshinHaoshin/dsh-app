@@ -7,6 +7,6 @@ export type CatalogModel = {id:string;label?:string;name?:string;reasoning?:{eff
 export type ModelCatalog = {groups:{id:string;label?:string;name?:string;models:CatalogModel[]}[];default?:ModelSelection;defaultSelection?:ModelSelection};
 export type HostEvent = {type:string;event?:string;args?:unknown[];eventId?:string;request?:Record<string,unknown>;context?:unknown;clientId?:string;host?:{home:string}};
 export type Approval = {eventId:string;clientId:string;tool:string;reason:string;sessionId?:string};
-export type MessageRow = {id:string;kind:'user'|'assistant'|'tool'|'error'|'notice';text:string;label?:string;detail?:string;pending?:boolean;time?:number};
+export type MessageRow = {id:string;kind:'user'|'assistant'|'tool'|'error'|'notice';text:string;label?:string;detail?:string;pending?:boolean;time?:number;attachments?:import('./attachments').AttachmentRef[]};
 export type Workspace={workspaceId:string;title:string;path:string;sessionIds:string[];createdAt?:number;updatedAt?:number};
 export type WorkspaceOption={key:string;workspaceId?:string;title:string;path:string;sessionIds:string[];registered:boolean};

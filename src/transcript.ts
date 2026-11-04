@@ -1,4 +1,5 @@
 import type {MessageRow,WireEvent} from './types';
+import type {AttachmentRef} from './attachments';
 type AnyRecord=Record<string,any>;
 export function contentText(content:unknown):string {
   if(typeof content==='string')return content;
@@ -15,7 +16,16 @@ export function eventRows(events:WireEvent[]):MessageRow[]{
   for(const event of events){
     const d=event.data as AnyRecord;const id=String(event.seq);
     switch(event.type){
-      case 'user/message': rows.push({id,kind:'user',text:contentText(d.content??d.message?.content),time:event.time});break;
+      case 'user/message': {
+        const source=d.source??d.message?.source;
+        // DSH records injected context as user/message too; classify by source,
+        // never by matching its text (a real user may quote the same words).
+        if(source?.kind&&source.kind!=='user')break;
+        const content=d.content??d.message?.content;
+        const attachments:AttachmentRef[]=Array.isArray(content)?content.filter(p=>['image','file'].includes(p?.type)&&p.attachment?.attachmentId).map(p=>p.attachment):[];
+        const text=Array.isArray(content)?content.filter(p=>p?.type==='text').map(p=>p.text).join('\n'):contentText(content);
+        rows.push({id,kind:'user',text,attachments,time:event.time});break;
+      }
       case 'assistant/message':case 'assistant/attempt':{
         const stream=d.stream??d.message?.stream;
         const text=streamText(stream)||contentText(d.content??d.message?.content);
@@ -46,7 +56,7 @@ export function eventRows(events:WireEvent[]):MessageRow[]{
       case 'turn/end':for(const row of toolCalls.values())if(row.pending){row.pending=false;row.label='已结束';}break;
     }
   }
-  return rows.filter(row=>row.kind==='tool'||row.text.trim());
+  return rows.filter(row=>row.kind==='tool'||row.text.trim()||row.attachments?.length);
 }
 
 export type JournalState={events:WireEvent[];cursor:number;hasMore:boolean;live:string;attemptId?:string;nextIndex:number;revision:number;liveStream:unknown[]};

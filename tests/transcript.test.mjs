@@ -16,3 +16,8 @@ test('tool results settle matching calls and completed assistant text renders on
  const rows=eventRows([{seq:0,type:'tool/call',data:{id:'call',name:'bash',arguments:{cmd:'pwd'}}},{seq:1,type:'tool/result',data:{callId:'call',content:[{type:'text',text:'/workspace'}]}},{seq:2,type:'assistant/message',data:{stream:[{type:'text-chunks',texts:['Done']}]}}]);
  assert.equal(rows[0].pending,false);assert.match(rows[0].detail,/\/workspace/);assert.equal(rows[1].text,'Done');
 });
+
+test('runtime context is excluded by source while user quotations and attachments remain visible',()=>{
+ const events=[{seq:0,type:'user/message',data:{source:{kind:'runtime-context'},content:[{type:'text',text:'Current runtime context.'}]}},{seq:1,type:'user/message',data:{source:{kind:'tool-registry'},content:[{type:'text',text:'injected tools'}]}},{seq:2,type:'user/message',data:{source:{kind:'user'},content:[{type:'text',text:'Current runtime context. Why does this appear?'}]}},{seq:3,type:'user/message',data:{source:{kind:'user'},content:[{type:'image',attachment:{attachmentId:'img',mediaType:'image/png'}}]}}];
+ const rows=eventRows(events);assert.equal(rows.length,2);assert.match(rows[0].text,/Why/);assert.equal(rows[1].attachments[0].attachmentId,'img');assert.equal(rows[1].text,'');
+});

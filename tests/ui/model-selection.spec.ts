@@ -28,6 +28,7 @@ async function modelHost(page:Page,openExisting=true){
   }));
   await page.goto('/');await expect(page.locator('.connection-pill')).toHaveText('已连接');
   if(openExisting){await page.getByRole('button',{name:'打开会话列表'}).click();await page.getByRole('button').filter({hasText:'推理设置测试'}).click();}
+  await page.getByRole('button',{name:'模型与推理强度',exact:true}).click();
   return {requests,desktopSelect:(s:any)=>push(s),fail:()=>{fail=true;}};
 }
 test('reasoning follows the session, sends the full host selection and removes effort for plain models',async({page})=>{
@@ -38,19 +39,19 @@ test('reasoning follows the session, sends the full host selection and removes e
   await page.screenshot({path:'artifacts/mobile-reasoning-v03.png',animations:'disabled'});
   expect(host.requests.find(f=>f.endpoint==='session/selectModel').params).toEqual({sessionId:'s1',provider:'test',model:'reasoner',reasoningEffort:'ultra'});
   host.desktopSelect({provider:'test',model:'reasoner',reasoningEffort:'medium'});await expect(effort).toHaveValue('medium');
-  await page.getByLabel('选择模型',{exact:true}).selectOption('test\u001fplain');await expect(effort).toHaveCount(0);
+  await page.getByLabel('选择模型',{exact:true}).selectOption('test\u001fplain');await expect(effort).toBeDisabled();
   expect(host.requests.filter(f=>f.endpoint==='session/selectModel').at(-1).params).not.toHaveProperty('reasoningEffort');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('a reasoning choice before the first message is applied before the new session prompt',async({page})=>{
   const host=await modelHost(page,false);const effort=page.getByLabel('推理强度',{exact:true});await expect(effort).toHaveValue('medium');
   await effort.selectOption('ultra');expect(host.requests.filter(f=>f.endpoint==='session/selectModel')).toHaveLength(0);
-  await page.getByRole('textbox',{name:'发送给 DSH 的消息'}).fill('测试新会话推理设置');await page.getByRole('button',{name:'发送消息',exact:true}).click();
+  await page.getByRole('button',{name:'关闭模型设置'}).click();await page.getByRole('textbox',{name:'发送给 DSH 的消息'}).fill('测试新会话推理设置');await page.getByRole('button',{name:'发送消息',exact:true}).click();
   await expect.poll(()=>host.requests.filter(f=>f.endpoint==='session/prompt').length).toBe(1);
   const selection=host.requests.findIndex(f=>f.endpoint==='session/selectModel'),prompt=host.requests.findIndex(f=>f.endpoint==='session/prompt');
   expect(selection).toBeLessThan(prompt);expect(host.requests[selection].params).toMatchObject({sessionId:'new-session',reasoningEffort:'ultra'});
 });
 test('failed reasoning changes retain the previous selection and show an error',async({page})=>{
   const host=await modelHost(page);host.fail();const effort=page.getByLabel('推理强度',{exact:true});await expect(effort).toHaveValue('medium');
-  await effort.selectOption('ultra');await expect(page.getByRole('alert')).toContainText('模拟选择失败');await expect(effort).toHaveValue('medium');
+  await effort.selectOption('ultra');await expect(effort).toHaveValue('medium');await page.getByRole('button',{name:'关闭模型设置'}).click();await expect(page.getByRole('alert')).toContainText('模拟选择失败');
 });

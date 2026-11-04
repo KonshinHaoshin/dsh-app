@@ -3,11 +3,11 @@ import type {Page,WebSocketRoute} from '@playwright/test';
 
 async function computer(page:Page,letter:string,holdReady=false){
   const name=`电脑 ${letter}`,origin=`https://${letter.toLowerCase()}.computer.test`,token=`test-only-${letter}-computer-pairing-token-0001`;
-  const calls:any[]=[];const sockets=new Set<WebSocketRoute>();let follow:(event:any)=>void=()=>{};let events:(frame:any)=>void=()=>{};let seq=0;let delayed=false;let finishPrompt:()=>void=()=>{};let releaseReady:()=>void=()=>{};
+  const calls:any[]=[],opens:any[]=[];const streams=new Map<string,string>();const history:any[]=[{seq:0,type:'assistant/message',data:{stream:[{type:'text-chunks',texts:[`${letter} 的历史回复`]}]}}];const sockets=new Set<WebSocketRoute>();let follow:(event:any)=>void=()=>{};let events:(frame:any)=>void=()=>{};let seq=0;let delayed=false;let finishPrompt:()=>void=()=>{};let releaseReady:()=>void=()=>{};
   await page.routeWebSocket(origin.replace('https:','wss:')+'/connect',ws=>{
     ws.onClose(()=>sockets.delete(ws));
     ws.onMessage(raw=>{
-      const f=JSON.parse(String(raw));const send=(type:string,value:unknown)=>ws.send(JSON.stringify({type,id:f.id,value}));
+      const f=JSON.parse(String(raw));if(f.type==='cancel')streams.delete(f.id);const send=(type:string,value:unknown)=>ws.send(JSON.stringify({type,id:f.id,value}));
       if(f.type==='pair'){const paired=()=>ws.send(JSON.stringify({type:'paired',protocol:1,deviceId:'same-id',token,name}));if(holdReady){releaseReady();setTimeout(paired,75);}else paired();return;}
       if(f.type==='hello'){expect(f.token).toBe(token);releaseReady=()=>{sockets.add(ws);ws.send(JSON.stringify({type:'ready',protocol:1,name}));};if(!holdReady)releaseReady();return;}
       if(f.type==='call'){
@@ -19,17 +19,18 @@ async function computer(page:Page,letter:string,holdReady=false){
         else send('result',{});
       }
       if(f.type==='open'){
+        opens.push(f);streams.set(f.id,f.endpoint);
         if(f.endpoint==='workspace/follow')send('item',{type:'baseline',value:{items:[{workspaceId:'same-workspace',title:`${letter} 项目`,path:`/${letter}/project`,sessionIds:['same-session']}]}});
         if(f.endpoint==='$events'){send('item',{type:'ready',clientId:'same-client',host:{home:`/${letter}`}});events=frame=>send('item',frame);}
         if(f.endpoint==='session/follow'){
-          send('item',{type:'snapshot',cursor:0,hasMore:false,records:[{type:'event',event:{seq:0,type:'assistant/message',data:{stream:[{type:'text-chunks',texts:[`${letter} 的历史回复`]}]}}}],projections:{values:{modelSelection:{next:{provider:'same-provider',model:'reasoner',reasoningEffort:letter==='A'?'low':'high'},lastUsed:null}}}});
-          seq=0;follow=event=>send('item',{type:'event',event:{...event,seq:++seq}});
+          send('item',{type:'snapshot',cursor:seq,hasMore:false,records:history.map(event=>({type:'event',event})),projections:{values:{modelSelection:{next:{provider:'same-provider',model:'reasoner',reasoningEffort:letter==='A'?'low':'high'},lastUsed:null}}}});
+          follow=event=>{const durable={...event,seq:++seq};history.push(durable);if(streams.has(f.id))send('item',{type:'event',event:durable});};
         }
       }
     });
   });
   const link='https://dshapi.shelterhub.moe/#pair='+Buffer.from(JSON.stringify({v:1,url:origin,mode:'public',deviceId:'same-id',name,code:`test-only-${letter}-one-time-code-00000001`,expiresAt:Date.now()+300000})).toString('base64url');
-  return {name,token,link,calls,sockets,delay:()=>{delayed=true;},finish:()=>finishPrompt(),reply:(text:string)=>follow({type:'assistant/message',data:{stream:[{type:'text-chunks',texts:[text]}]}}),approval:()=>events({type:'waterfall',event:'approval/request',eventId:'same-approval',agentId:'same-session',request:{tool:`${letter} 工具`,reason:`${letter} 请求确认`}})};
+  return {name,token,link,calls,opens,streams,sockets,statusBurst:()=>{for(let i=0;i<100;i++)events({type:'emit',event:'api-session/status',args:['same-session',false]});},delay:()=>{delayed=true;},finish:()=>finishPrompt(),reply:(text:string)=>follow({type:'assistant/message',data:{stream:[{type:'text-chunks',texts:[text]}]}}),approval:()=>events({type:'waterfall',event:'approval/request',eventId:'same-approval',agentId:'same-session',request:{tool:`${letter} 工具`,reason:`${letter} 请求确认`}})};
 }
 const active=(page:Page)=>page.locator('.device-workspace:not([hidden])');
 async function pair(page:Page,link:string){
@@ -87,4 +88,22 @@ test('background approvals, disconnects, rename, reload and removal stay scoped 
   await active(page).locator('.connection-pill').click();await page.getByRole('button',{name:'办公室 的连接选项'}).click();await page.getByRole('button',{name:'移除',exact:true}).click();await page.getByRole('button',{name:'移除电脑',exact:true}).click();
   await expect(page.getByRole('button',{name:'切换到 办公室',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'切换到 电脑 B',exact:true})).toContainText('已连接');expect(b.sockets.size).toBe(1);
   const records=await page.evaluate(()=>JSON.parse(localStorage.getItem('dsh.devices.v1')??'[]'));expect(records).toHaveLength(1);
+});
+
+
+test('hidden computers keep approvals without downloading transcripts and reopen from a fresh snapshot',async({page})=>{
+ const a=await computer(page,'A'),b=await computer(page,'B');await page.goto('/');await pair(page,a.link);await openSession(page,'A');
+ expect(a.opens.find(f=>f.endpoint==='session/follow').params.maxMessages).toBe(30);
+ await pair(page,b.link);await openSession(page,'B');
+ await expect.poll(()=>[...a.streams.values()].sort()).toEqual(['$events']);
+ expect([...b.streams.values()].sort()).toEqual(['$events','session/follow','workspace/follow']);
+ a.reply('后台继续完成的回复');a.approval();await expect(page.getByLabel('其他电脑有 1 项待审批')).toBeVisible();
+ await switchTo(page,a.name);await expect(page.getByText('后台继续完成的回复',{exact:true})).toBeVisible();
+ await expect.poll(()=>[...b.streams.values()].sort()).toEqual(['$events']);
+});
+
+test('bursts of session events produce one coalesced list refresh',async({page})=>{
+ const a=await computer(page,'A');await page.goto('/');await pair(page,a.link);await openSession(page,'A');await page.clock.install();
+ const before=a.calls.filter(f=>f.endpoint==='session/list').length;a.statusBurst();
+ await page.clock.runFor(300);await expect.poll(()=>a.calls.filter(f=>f.endpoint==='session/list').length).toBe(before+1);
 });

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import type {FormEvent,ReactNode} from 'react';
 import {ArrowUp,ArrowUpRight,ArrowLeft,Check,ChevronDown,ChevronRight,Code2,Command,Copy,Folder,Globe,History,Laptop,Link2,LoaderCircle,Menu,MessageSquare,MoreHorizontal,Plus,Radio,RefreshCw,Search,Settings2,ShieldCheck,Square,Terminal,Unplug,Wifi,X} from 'lucide-react';
 import Markdown from 'react-markdown';
@@ -51,6 +51,7 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   const [search,setSearch]=useState('');
   const [error,setError]=useState('');
   const [catalog,setCatalog]=useState<ModelCatalog>({groups:[]});
+  const catalogLoaded=useRef(false);
   const [modelProjection,setModelProjection]=useState<ModelProjection|null>(null);
   const [selectingModel,setSelectingModel]=useState(false);
   const selectionOperation=useRef(0);
@@ -71,7 +72,8 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   const modelInfo=catalog.groups.find(g=>g.id===selection?.provider)?.models.find(m=>m.id===selection?.model);
   const reasoning=reasoningFor(catalog,selection);
   const reasoningEffort=selection?.reasoningEffort??reasoning?.defaultEffort??'';
-  const rows=eventRows(journal.events);
+  const rows=useMemo(()=>eventRows(journal.events),[journal.events]);
+  const refreshSessions=useRef<()=>void>(()=>{});
   const online=state==='connected';
   const running=current?.running??false;
   const options=workspaceOptions(workspaces,sessions);
@@ -82,7 +84,7 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   useEffect(()=>()=>{for(const a of attachmentsRef.current)if(a.preview)URL.revokeObjectURL(a.preview);},[]);
   function addAttachments(files:File[]){try{validateAttachments([...attachments.map(a=>a.file),...files]);setAttachments(previous=>[...previous,...files.map(file=>({id:crypto.randomUUID(),file,...IMAGE_TYPES.includes(file.type)?{preview:URL.createObjectURL(file)}:{}}))]);setError('');}catch(e){setError((e as Error).message);}}
   function removeAttachment(id:string){setAttachments(previous=>previous.filter(a=>{if(a.id!==id)return true;if(a.preview)URL.revokeObjectURL(a.preview);return false;}));}
-  async function refresh(){try{const result=await client.call<{items:Session[]}>('session/list');setSessions(result.items.map(s=>({...s,title:s.title??(typeof s.projections?.values.title==='string'?s.projections.values.title:undefined)})));}catch(e){setError((e as Error).message);}}
+  function refresh(){refreshSessions.current();}
   useEffect(()=>{
     client.onState=(s,message)=>{setState(s);setConnectionError(message??'');if(s!=='connected'){clientId.current='';setApprovals([]);}};
     if(device.enabled&&profile.deviceId&&profile.token)client.connect(profile);else client.disconnect();
@@ -93,9 +95,17 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
   useEffect(()=>{setWorkspaceKey(localStorage.getItem('dsh.workspace.'+device.key)??'');},[device.key]);
   useEffect(()=>{
     if(!online)return;
-    let active=true;
-    void refresh();
-    client.call<ModelCatalog>('session/modelCatalog').then(value=>{if(active)setCatalog(value);}).catch(e=>{if(active)setError(e.message);});
+    let closed=false,inFlight=false,queued=false;let refreshTimer:ReturnType<typeof setTimeout>|undefined;
+    // Coalesce event bursts and serialize reads. A response from an old socket
+    // must never replace data returned by a newer connection.
+    const load=async()=>{
+      if(closed)return;if(inFlight){queued=true;return;}inFlight=true;
+      try{const result=await client.call<{items:Session[]}>('session/list');if(!closed)setSessions(result.items.map(s=>({...s,title:s.title??(typeof s.projections?.values.title==='string'?s.projections.values.title:undefined)})));}
+      catch(e){if(!closed)setError((e as Error).message);}
+      finally{inFlight=false;if(queued&&!closed){queued=false;schedule();}}
+    };
+    const schedule=()=>{if(!closed&&!refreshTimer)refreshTimer=setTimeout(()=>{refreshTimer=undefined;void load();},200);};
+    refreshSessions.current=schedule;void load();
     const unsub=nativeBackground?()=>{}:client.subscribe('$events',{},(event:any)=>{
       if(event.type==='ready'){clientId.current=event.clientId;setApprovals([]);return;}
       if(event.type==='cancel'){setApprovals(a=>a.filter(x=>x.eventId!==event.eventId));return;}
@@ -109,21 +119,32 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
       }
       if(['emit','event'].includes(event.type)&&event.event?.startsWith('api-session/'))void refresh();
     },e=>setError(e.message));
+    const timer=setInterval(schedule,15000);
+    return()=>{closed=true;refreshSessions.current=()=>{};clearTimeout(refreshTimer);unsub();clearInterval(timer);};
+  },[online,client,nativeBackground]);
+  // Other computers keep their lightweight approval connection, but only the
+  // visible computer loads the catalog, workspaces and conversation transcript.
+  useEffect(()=>{
+    if(!online||!active)return;
+    let disposed=false;
+    if(!catalogLoaded.current)client.call<ModelCatalog>('session/modelCatalog').then(value=>{if(!disposed){catalogLoaded.current=true;setCatalog(value);}}).catch(e=>{if(!disposed)setError(e.message);});
     const workspaceUnsub=client.subscribe('workspace/follow',{},(frame:any)=>{
       if(frame.type==='baseline')setWorkspaces(frame.value.items);
       else if(frame.type==='upsert')setWorkspaces(items=>[...items.filter(w=>w.workspaceId!==frame.workspace.workspaceId),frame.workspace]);
       else if(frame.type==='remove')setWorkspaces(items=>items.filter(w=>w.workspaceId!==frame.workspaceId));
       else if(frame.type==='order')setWorkspaces(items=>[...items].sort((a,b)=>frame.workspaceIds.indexOf(a.workspaceId)-frame.workspaceIds.indexOf(b.workspaceId)));
     },e=>setError(e.message));
-    const timer=setInterval(()=>void refresh(),15000);
-    return()=>{active=false;unsub();workspaceUnsub();clearInterval(timer);};
-  },[online,client,nativeBackground]);
+    return()=>{disposed=true;workspaceUnsub();};
+  },[online,client,active]);
+  useEffect(()=>{if(!online)catalogLoaded.current=false;},[online]);
   useEffect(()=>{if(nativeBackground)setApprovals(nativeApprovals);},[nativeBackground,nativeApprovals,online]);
   useEffect(()=>{if(noticeSession){setSelected(noticeSession.sessionId);setView('chat');}},[noticeSession]);
   useEffect(()=>{
     setJournal(emptyJournal());setPending(null);setError('');setModelProjection(null);setSelectingModel(false);selectionOperation.current++;followScroll.current=true;
-    if(!online||!selected)return;
-    return client.subscribe('session/follow',{address:{kind:'session',sessionId:selected},assistantStream:true,maxMessages:100},item=>{
+  },[selected,online,client]);
+  useEffect(()=>{
+    if(!online||!selected||!active)return;
+    return client.subscribe('session/follow',{address:{kind:'session',sessionId:selected},assistantStream:true,maxMessages:30},item=>{
       if(item.type==='snapshot')setModelProjection(readModelProjection(item.projections));
       else if(item.type==='event')setModelProjection(previous=>advanceModelProjection(previous??readModelProjection(current?.projections),item.event));
       setJournal(previous=>{try{return reduceJournal(previous,item);}catch(e){setError((e as Error).message);return previous;}});
@@ -131,7 +152,7 @@ export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSe
       if(events.some((e:any)=>e?.type==='turn/start'))setSessions(s=>s.map(row=>row.sessionId===selected?{...row,running:true}:row));
       if(events.some((e:any)=>e?.type==='turn/end')){setSessions(s=>s.map(row=>row.sessionId===selected?{...row,running:false}:row));void refresh();}
     },e=>setError(e.message));
-  },[selected,online,client]);
+  },[selected,online,client,active]);
   useEffect(()=>{
     if(pending&&journal.events.some(e=>(e.data.source as any)?.rpcId===pending.id))setPending(null);
   },[journal.events,pending]);

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "appId": "moe.shelterhub.dsh",
-  "version": "0.6.0",
-  "versionCode": 6,
-  "notes": "新增 Android 原生后台连接，切到后台或锁屏后接收任务结束和审批通知。\n在“连接 → 后台连接与通知”开启，允许通知并按需设置电池不受限制；常驻通知可随时关闭。\n通知可返回对应电脑与会话，审批仍需手动确认。\n检查更新入口移至连接页顶部，支持每日自动检查、App 内下载进度、完整性与签名校验及系统确认安装。",
+  "version": "0.6.1",
+  "versionCode": 7,
+  "notes": "减少公网和多电脑场景的首屏同步：最近记录从 100 条改为 30 条，更早记录按需加载。\n未选中的电脑保留审批连接，暂停聊天记录和工作区订阅；切回时同步最新快照。\n合并密集会话事件的列表刷新，串行请求并丢弃旧连接响应；减少流式输出期间的历史消息重算。\n保留 Android 后台连接、通知及 App 内更新功能。",
   "android": {
-    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.6.0/releases/v0.6.0/dsh-mobile-0.6.0-debug.apk",
-    "sha256": "80fd9e33f2130fdadecfb42061484feea7e5e6128180f23ba2dc3cadafea5a91",
-    "size": 34601495
+    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.6.1/releases/v0.6.1/dsh-mobile-0.6.1-debug.apk",
+    "sha256": "b1a7c362f119738875c8e9f355b155ebbb08a725e60c432ca2f3dc7097404f16",
+    "size": 34601699
   }
 }

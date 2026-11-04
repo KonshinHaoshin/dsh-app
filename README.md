@@ -149,4 +149,8 @@ Copyright © 2026 konshinhaoshin.
 
 `tests/native/background.mjs` 仅用于空白的隔离模拟器，通过本机 WebSocket 协议测试服务和通知，不调用模型或执行工具。需要先安装当前构建 APK，设置 `ADB` / `DSH_QA_SERIAL` 后运行 `node tests/native/background.mjs`；默认使用 `emulator-5580`。测试拒绝覆盖非空电脑列表，仅清理自身创建的测试配对。包含锁屏、深度休眠（已给予电池豁免）、暂停 WebView JavaScript、任务和审批通知、通知意图导航、显式审批回复、原生重连及非法更新源拒绝。
 
+`tests/native/update-install.mjs` 需要预先安装带原生更新器的旧测试版，读取当前 `update.json`，验证 App 内发现更新、下载和校验、系统确认安装及加密配对凭据保留。仅在空白隔离模拟器运行；若 Play Protect 要求扫描，请在模拟器中按提示完成，测试会等待安装结果。
+
+v0.6.0 已在 Android 模拟器验证深度休眠通知和系统覆盖升级；Play Protect 扫描通过后完成安装，升级后加密凭据可正常读取。尚未完成各手机厂商系统的真机后台测试。
+
 系统行为参考：[Android 前台远程消息服务](https://developer.android.com/develop/background-work/services/fgs/service-types#remote-messaging)、[通知权限](https://developer.android.com/develop/ui/compose/notifications/notification-permission)、[Doze 与电池优化](https://developer.android.com/training/monitoring-device-state/doze-standby)。

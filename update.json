@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "appId": "moe.shelterhub.dsh",
-  "version": "0.3.0",
-  "versionCode": 3,
-  "notes": "支持按模型实际能力切换推理强度，并同步电脑端设置。\n新增检查更新、版本说明和 APK 下载入口。",
+  "version": "0.4.0",
+  "versionCode": 4,
+  "notes": "支持同时连接多台 DSH 电脑，快速切换并保留各自的会话、草稿和工作区。\n新增电脑重命名、连接状态、待审批数量以及独立断开与移除。\nAndroid 使用 Keystore 加密保存配对，重启 App 后自动重新连接。",
   "android": {
-    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.3.0/releases/v0.3.0/dsh-mobile-0.3.0-debug.apk",
-    "sha256": "8ad41a8373e1281a5162c569c9cc7562d5f5cc4aac5ef544007b402eaaed845f",
-    "size": 34005600
+    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.4.0/releases/v0.4.0/dsh-mobile-0.4.0-debug.apk",
+    "sha256": "30ce7fd82695622325191ce66f3b256b639c6773b99a1ae744c388e84e6489d1",
+    "size": 34010692
   }
 }

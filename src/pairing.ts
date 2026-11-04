@@ -24,10 +24,10 @@ export function redeemPairing(link:PairingLink):Promise<ConnectionProfile>{
   return new Promise((resolve,reject)=>{
     const url=new URL(link.url);url.protocol=url.protocol==='https:'?'wss:':'ws:';url.pathname='/connect';
     const ws=new WebSocket(url);let settled=false;
-    const finish=(error?:Error,token?:string)=>{if(settled)return;settled=true;clearTimeout(timer);ws.close();error?reject(error):resolve({url:link.url,deviceId:link.deviceId,token:token!,mode:link.mode});};
+    const finish=(error?:Error,token?:string,name?:string)=>{if(settled)return;settled=true;clearTimeout(timer);ws.close();error?reject(error):resolve({url:link.url,deviceId:link.deviceId,token:token!,mode:link.mode,name:name??link.name});};
     const timer=setTimeout(()=>finish(new Error('连接超时，请确认电脑 DSH 正在运行')),10000);
     ws.onopen=()=>ws.send(JSON.stringify({type:'pair',deviceId:link.deviceId,code:link.code}));
-    ws.onmessage=event=>{try{const value=JSON.parse(event.data);if(value.type==='paired'&&value.protocol===1&&value.deviceId===link.deviceId&&typeof value.token==='string'&&value.token.length>=24)finish(undefined,value.token);else finish(new Error(value.message??'配对失败，请刷新配对码'));}catch{finish(new Error('配对响应无效'));}};
+    ws.onmessage=event=>{try{const value=JSON.parse(event.data);if(value.type==='paired'&&value.protocol===1&&value.deviceId===link.deviceId&&typeof value.token==='string'&&value.token.length>=24)finish(undefined,value.token,typeof value.name==='string'?value.name.slice(0,100):undefined);else finish(new Error(value.message??'配对失败，请刷新配对码'));}catch{finish(new Error('配对响应无效'));}};
     ws.onerror=()=>finish(new Error('无法连接电脑，请检查网络'));
     ws.onclose=event=>finish(new Error(event.reason||'配对码已失效，请在电脑端刷新'));
   });

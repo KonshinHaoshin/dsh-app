@@ -1,4 +1,4 @@
-export type ConnectionProfile = { url: string; deviceId: string; token: string; mode: 'public'|'lan' };
+export type ConnectionProfile = { url: string; deviceId: string; token: string; mode: 'public'|'lan'; name?:string };
 export type ConnectionState = 'disconnected'|'connecting'|'connected'|'reconnecting'|'error';
 export type Session = {sessionId:string;title?:string;cwd?:string;updatedAt:number;running:boolean;blank?:boolean;projections?:{values:Record<string,unknown>}};
 export type WireEvent = {seq:number;type:string;time?:number;data:Record<string,unknown>};

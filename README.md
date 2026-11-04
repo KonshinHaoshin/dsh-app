@@ -6,7 +6,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 ## 安装 Android App
 
-下载 [DSH Android v0.3.0 APK](releases/v0.3.0/dsh-mobile-0.3.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
+下载 [DSH Android v0.4.0 APK](releases/v0.4.0/dsh-mobile-0.4.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
 
 这是可直接安装的调试签名 APK，尚未配置商店发布签名。自行构建时应保留相同签名密钥，才能覆盖更新同签名的旧版本。
 
@@ -17,6 +17,18 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 3. 手机打开「连接 → 扫一扫」完成配对。也可使用配对链接或展开手动连接。
 
 支持局域网直连和公网 WSS；默认公网服务地址为 `https://dshapi.shelterhub.moe`。公网连接仍需电脑插件已配置并连接中继。仓库不包含配对密钥或中继认证信息。
+
+## 连接多台电脑
+
+在「连接」面板点击「添加电脑 · 扫一扫」，依次扫描各台电脑的二维码。已添加的电脑会保留连接，点击列表项即可切换当前工作台；页面顶部始终显示正在操作的电脑。
+
+- 各电脑的会话、工作区、草稿、模型和审批分别保存，切换时不会互相覆盖。
+- 连接列表显示在线状态和待审批数量；电脑可以重命名、单独断开、重新连接或移除。
+- 多台电脑可使用同一公网中继，每台电脑应使用独立的设备 ID；新安装的配套插件会自动生成。
+- 以服务地址和设备 ID 区分连接，名称相同或不同服务使用相同设备 ID 时仍保留独立记录。
+- Android 自动迁移旧版连接，并使用 Keystore 的 AES-GCM 密钥加密保存配对信息；设备列表同步写入原生存储。重启 App 后会重新连接已启用的电脑。
+
+App 在前台可同时保持多条连接。Android 息屏或系统挂起 App 时，连接恢复受系统生命周期约束，目前没有后台保活服务或推送。
 
 ## 功能
 
@@ -36,7 +48,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 更新信息来自此仓库 `main` 分支的 `update.json`，下载指向本仓库固定版本标签下的 APK。不会在后台静默下载安装或加载远端 JavaScript。
 
-手机密钥保存在当前 WebView 的 `sessionStorage`，设备 ID 和连接地址保存在 `localStorage`。重新启动新的 App 会话时可能需要重新扫码。局域网 WS 为明文，仅适用于可信私人网络；公网使用 WSS，目前没有端到端加密和后台推送。
+Android 配对密钥保存在应用私有存储中，由 Android Keystore 加密；原生调用参数日志已关闭。浏览器和当前 iOS 共用代码仍使用每个连接独立的 `sessionStorage` 凭据，新会话可能需要重新扫码。`localStorage` 中的设备列表不包含密钥。局域网 WS 为明文，仅适用于可信私人网络；公网使用 WSS，目前没有端到端加密和后台推送。
 
 ## 本地开发
 
@@ -72,7 +84,7 @@ npm run android:build
 输出：
 
 ```text
-artifacts/dsh-mobile-0.3.0-debug.apk
+artifacts/dsh-mobile-0.4.0-debug.apk
 ```
 
 脚本依次构建网页、同步 Capacitor 原生依赖、执行 Gradle `assembleDebug`。为避免 exFAT / 外接磁盘的 AppleDouble 元数据影响 Android 资源解析，Gradle 在系统临时目录中运行，成功后自动清理。

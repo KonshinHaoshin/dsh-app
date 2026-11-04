@@ -7,15 +7,31 @@ import android.view.View;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
+    static volatile boolean visible = false;
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DeviceCredentialsPlugin.class);
+        registerPlugin(CompanionPlugin.class);
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.WHITE);
         getWindow().setNavigationBarColor(Color.WHITE);
         int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         getWindow().getDecorView().setSystemUiVisibility(flags);
+    }
+
+    @Override
+    public void onStart() { super.onStart(); visible = true; }
+    @Override
+    public void onResume() { super.onResume(); visible = true; }
+    @Override
+    public void onPause() { visible = false; super.onPause(); }
+    @Override
+    public void onStop() { visible = false; super.onStop(); }
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent); setIntent(intent); CompanionPlugin.navigation(intent);
     }
 
     @Override

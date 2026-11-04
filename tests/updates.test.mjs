@@ -16,3 +16,8 @@ test('manual update check omits credentials, bypasses cache and surfaces network
   assert.equal(latest.version,'0.3.0');
   await assert.rejects(()=>fetchAppUpdate(async()=>new Response('',{status:503})),/503/);
 });
+
+test('manifest download version and size must match the declared release',()=>{
+ assert.throws(()=>parseAppUpdate({...update,version:'0.4.0'}),/不受信任/);
+ assert.throws(()=>parseAppUpdate({...update,android:{...update.android,size:121*1024*1024}}),/格式/);
+});

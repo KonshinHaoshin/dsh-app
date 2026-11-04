@@ -3,6 +3,7 @@ import type {FormEvent,ReactNode} from 'react';
 import {ArrowUp,ArrowUpRight,ArrowLeft,Check,ChevronDown,ChevronRight,Code2,Command,Copy,Folder,Globe,History,Laptop,Link2,LoaderCircle,Menu,MessageSquare,MoreHorizontal,Plus,Radio,RefreshCw,Search,Settings2,ShieldCheck,Square,Terminal,Unplug,Wifi,X} from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {companion} from './companion';
 import {HarnessConnection} from './connection';
 import WorkspaceSheet from './WorkspaceSheet';
 import ModelSheet from './ModelSheet';
@@ -25,8 +26,8 @@ function IconButton({label,children,onClick,className='',disabled=false}:{label:
 function timeLabel(time:number){const delta=Date.now()-time;return delta<60000?'刚刚':delta<3600000?`${Math.floor(delta/60000)} 分钟前`:new Date(time).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});}
 function basename(cwd?:string){return cwd?.split(/[\\/]/).filter(Boolean).at(-1)??'默认工作区';}
 
-type Props={theme:string;onThemeChange:(theme:string)=>void;attempt:number;device:SavedDevice;active:boolean;blocked:boolean;initialDraft?:string;otherApprovals:number;onOpenConnections:(draft?:string)=>void;onStatus:(key:string,status:DeviceStatus)=>void};
-export default function HostWorkspace({theme,onThemeChange:setTheme,attempt,device,active,blocked,initialDraft,otherApprovals,onOpenConnections,onStatus}:Props){
+type Props={nativeBackground:boolean;nativeApprovals:Approval[];noticeSession:{sessionId:string;sequence:number}|null;theme:string;onThemeChange:(theme:string)=>void;attempt:number;device:SavedDevice;active:boolean;blocked:boolean;initialDraft?:string;otherApprovals:number;onOpenConnections:(draft?:string)=>void;onStatus:(key:string,status:DeviceStatus)=>void};
+export default function HostWorkspace({nativeBackground,nativeApprovals,noticeSession,theme,onThemeChange:setTheme,attempt,device,active,blocked,initialDraft,otherApprovals,onOpenConnections,onStatus}:Props){
   const profile=device;const settings=blocked;
   const statusCallback=useRef(onStatus);statusCallback.current=onStatus;
   const hostName=device.key==='empty'?'':deviceName(device);
@@ -95,7 +96,7 @@ export default function HostWorkspace({theme,onThemeChange:setTheme,attempt,devi
     let active=true;
     void refresh();
     client.call<ModelCatalog>('session/modelCatalog').then(value=>{if(active)setCatalog(value);}).catch(e=>{if(active)setError(e.message);});
-    const unsub=client.subscribe('$events',{},(event:any)=>{
+    const unsub=nativeBackground?()=>{}:client.subscribe('$events',{},(event:any)=>{
       if(event.type==='ready'){clientId.current=event.clientId;setApprovals([]);return;}
       if(event.type==='cancel'){setApprovals(a=>a.filter(x=>x.eventId!==event.eventId));return;}
       if(event.type==='waterfall'){
@@ -106,7 +107,7 @@ export default function HostWorkspace({theme,onThemeChange:setTheme,attempt,devi
           void client.call('$events/result',{clientId:clientId.current,eventId:event.eventId,outcome:{kind:'next'}}).catch(e=>setError(e.message));
         }
       }
-      if(event.type==='event'&&event.event?.startsWith('api-session/'))void refresh();
+      if(['emit','event'].includes(event.type)&&event.event?.startsWith('api-session/'))void refresh();
     },e=>setError(e.message));
     const workspaceUnsub=client.subscribe('workspace/follow',{},(frame:any)=>{
       if(frame.type==='baseline')setWorkspaces(frame.value.items);
@@ -116,7 +117,9 @@ export default function HostWorkspace({theme,onThemeChange:setTheme,attempt,devi
     },e=>setError(e.message));
     const timer=setInterval(()=>void refresh(),15000);
     return()=>{active=false;unsub();workspaceUnsub();clearInterval(timer);};
-  },[online,client]);
+  },[online,client,nativeBackground]);
+  useEffect(()=>{if(nativeBackground)setApprovals(nativeApprovals);},[nativeBackground,nativeApprovals,online]);
+  useEffect(()=>{if(noticeSession){setSelected(noticeSession.sessionId);setView('chat');}},[noticeSession]);
   useEffect(()=>{
     setJournal(emptyJournal());setPending(null);setError('');setModelProjection(null);setSelectingModel(false);selectionOperation.current++;followScroll.current=true;
     if(!online||!selected)return;
@@ -190,7 +193,7 @@ export default function HostWorkspace({theme,onThemeChange:setTheme,attempt,devi
   function changeEffort(value:string){if(selection&&reasoning?.efforts.some(e=>e.id===value))void changeSelection({...selection,reasoningEffort:value});}
   async function decide(approval:Approval,allow:boolean){
     setResolving(approval.eventId);
-    try{await client.call('$events/result',{clientId:approval.clientId,eventId:approval.eventId,outcome:{kind:'result',value:allow?'allowed-once':'rejected'}});setApprovals(a=>a.filter(x=>x.eventId!==approval.eventId));}
+    try{if(nativeBackground)await companion.answer({key:device.key,eventId:approval.eventId,allow});else await client.call('$events/result',{clientId:approval.clientId,eventId:approval.eventId,outcome:{kind:'result',value:allow?'allowed-once':'rejected'}});setApprovals(a=>a.filter(x=>x.eventId!==approval.eventId));}
     catch(e){setError((e as Error).message);}finally{setResolving('');}
   }
   async function loadOlder(){

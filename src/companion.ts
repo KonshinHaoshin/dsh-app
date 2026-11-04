@@ -3,7 +3,7 @@ import {Capacitor,registerPlugin} from '@capacitor/core';
 import type {PluginListenerHandle} from '@capacitor/core';
 import type {SavedDevice} from './devices';
 import type {Approval} from './types';
-export type CompanionState={enabled:boolean;running:boolean;notifications:boolean;batteryUnrestricted:boolean;hosts:{key:string;online:boolean;error:string}[];approvals:(Approval&{deviceKey:string})[]};
+export type CompanionState={enabled:boolean;running:boolean;notifications:boolean;batteryUnrestricted:boolean;hosts:{key:string;online:boolean;error:string;transport?:'relay'|'p2p'|'lan'}[];approvals:(Approval&{deviceKey:string})[]};
 export type NoticeNavigation={key:string;sessionId?:string;kind:string};
 const EMPTY:CompanionState={enabled:false,running:false,notifications:false,batteryUnrestricted:false,hosts:[],approvals:[]};
 export const supportsCompanion=()=>Capacitor.getPlatform()==='android';

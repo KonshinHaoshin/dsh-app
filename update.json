@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "appId": "moe.shelterhub.dsh",
-  "version": "0.6.1",
-  "versionCode": 7,
-  "notes": "减少公网和多电脑场景的首屏同步：最近记录从 100 条改为 30 条，更早记录按需加载。\n未选中的电脑保留审批连接，暂停聊天记录和工作区订阅；切回时同步最新快照。\n合并密集会话事件的列表刷新，串行请求并丢弃旧连接响应；减少流式输出期间的历史消息重算。\n保留 Android 后台连接、通知及 App 内更新功能。",
+  "version": "0.7.0",
+  "versionCode": 8,
+  "notes": "新增公网 WebRTC P2P 直连：先通过中继连接，后台尝试打洞；成功后自动切换，失败或断线时自动回退中继。\nAndroid 原生后台服务支持 P2P 和回退，锁屏仍接收任务结束和审批通知；保留原有配对和审批。\n传输切换保留会话序号、确认和去重，避免重复分派已接收指令；支持大附件分块传输。\n连接页显示 P2P 直连或中继。电脑端需更新配套插件至 v0.5.0，无需重新扫码或更换中继密钥。",
   "android": {
-    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.6.1/releases/v0.6.1/dsh-mobile-0.6.1-debug.apk",
-    "sha256": "b1a7c362f119738875c8e9f355b155ebbb08a725e60c432ca2f3dc7097404f16",
-    "size": 34601699
+    "url": "https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.7.0/releases/v0.7.0/dsh-mobile-0.7.0-debug.apk",
+    "sha256": "e4d314ce12bd449e2bab1fcfce7886f078e0cd3e101d022457fada9c5977897b",
+    "size": 82953271
   }
 }

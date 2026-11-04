@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {test,expect} from '@playwright/test';
 import type {Page,WebSocketRoute} from '@playwright/test';
 
@@ -9,7 +10,7 @@ async function computer(page:Page,letter:string,holdReady=false){
     ws.onMessage(raw=>{
       const f=JSON.parse(String(raw));if(f.type==='cancel')streams.delete(f.id);const send=(type:string,value:unknown)=>ws.send(JSON.stringify({type,id:f.id,value}));
       if(f.type==='pair'){const paired=()=>ws.send(JSON.stringify({type:'paired',protocol:1,deviceId:'same-id',token,name}));if(holdReady){releaseReady();setTimeout(paired,75);}else paired();return;}
-      if(f.type==='hello'){expect(f.token).toBe(token);releaseReady=()=>{sockets.add(ws);ws.send(JSON.stringify({type:'ready',protocol:1,name}));};if(!holdReady)releaseReady();return;}
+      if(f.type==='hello'){expect(f.token).toBeUndefined();expect(f.tokenDigest).toBe(createHash('sha256').update(token).digest('hex'));releaseReady=()=>{sockets.add(ws);ws.send(JSON.stringify({type:'ready',protocol:1,name}));};if(!holdReady)releaseReady();return;}
       if(f.type==='call'){
         calls.push(f);
         if(f.endpoint==='session/list')send('result',{items:[{sessionId:'same-session',title:`${letter} 的会话`,cwd:`/${letter}/project`,updatedAt:Date.now(),running:false}]});

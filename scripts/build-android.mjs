@@ -11,7 +11,7 @@ const stage=await mkdtemp(path.join(tmpdir(),'dsh-android-'));
 const filter=source=>!path.basename(source).startsWith('._')&&!['build','.gradle'].includes(path.basename(source));
 await cp(path.join(root,'android'),path.join(stage,'android'),{recursive:true,filter});
 await mkdir(path.join(stage,'node_modules/@capacitor'),{recursive:true});
-for(const module of ['android','barcode-scanner'])await cp(path.join(root,'node_modules/@capacitor',module),path.join(stage,'node_modules/@capacitor',module),{recursive:true,filter});
+for(const module of ['android','barcode-scanner','app','app-launcher'])await cp(path.join(root,'node_modules/@capacitor',module),path.join(stage,'node_modules/@capacitor',module),{recursive:true,filter});
 const windows=process.platform==='win32';
 if(!windows)await chmod(path.join(stage,'android/gradlew'),0o755);
 const result=spawnSync(windows?'gradlew.bat':'./gradlew',['assembleDebug','--no-daemon','--console=plain'],{cwd:path.join(stage,'android'),shell:windows,stdio:'inherit',env:{...process.env,COPYFILE_DISABLE:'1'}});

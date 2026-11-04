@@ -6,7 +6,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 ## 安装 Android App
 
-下载 [DSH Android v0.2.0 APK](releases/v0.2.0/dsh-mobile-0.2.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
+下载 [DSH Android v0.3.0 APK](releases/v0.3.0/dsh-mobile-0.3.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
 
 这是可直接安装的调试签名 APK，尚未配置商店发布签名。自行构建时应保留相同签名密钥，才能覆盖更新同签名的旧版本。
 
@@ -22,10 +22,19 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 - 查看和续接电脑上的会话，流式接收回复和执行记录。
 - 搜索工作区、查看完整目录路径，按工作区筛选和新建会话。
-- 切换模型、停止任务、一次性工具审批和历史分页。
+- 切换模型与推理强度、停止任务、一次性工具审批和历史分页。
 - 通过 Android 原生相机扫码；浏览器版本使用网页相机识别。
 - 网络恢复后重新订阅状态；不会自动重发改变状态的操作。
 - 浅色 / 深色界面，适配手机和横屏。
+- 手动检查更新、查看新版说明和下载 Android 安装包。
+
+推理强度位于输入框下方模型名称右侧。选项由电脑 DSH 返回，不固定写死档位；不支持推理强度的模型会隐藏该入口。打开会话时读取当前设置，电脑上的后续修改也会同步；新会话可以在首次发送前选择强度。
+
+## 检查更新
+
+打开手机「连接」面板，点击底部的「检查更新」。发现新版本后显示版本说明和「下载更新」；点击后使用系统浏览器下载 APK，按 Android 提示安装。无可用更新、网络错误和超时会明确显示，可以重试。检查更新不要求先连接 DSH。
+
+更新信息来自此仓库 `main` 分支的 `update.json`，下载指向本仓库固定版本标签下的 APK。不会在后台静默下载安装或加载远端 JavaScript。
 
 手机密钥保存在当前 WebView 的 `sessionStorage`，设备 ID 和连接地址保存在 `localStorage`。重新启动新的 App 会话时可能需要重新扫码。局域网 WS 为明文，仅适用于可信私人网络；公网使用 WSS，目前没有端到端加密和后台推送。
 
@@ -63,7 +72,7 @@ npm run android:build
 输出：
 
 ```text
-artifacts/dsh-mobile-0.2.0-debug.apk
+artifacts/dsh-mobile-0.3.0-debug.apk
 ```
 
 脚本依次构建网页、同步 Capacitor 原生依赖、执行 Gradle `assembleDebug`。为避免 exFAT / 外接磁盘的 AppleDouble 元数据影响 Android 资源解析，Gradle 在系统临时目录中运行，成功后自动清理。
@@ -76,6 +85,14 @@ npm run android:open
 ```
 
 仓库包含 Gradle Wrapper，无需单独安装 Gradle。`android/local.properties`、签名文件、构建缓存和 `node_modules` 不提交。
+
+发布新更新时，同步修改 `package.json` 版本和 Android 的 `versionName` / `versionCode`，填写 `release-notes.md`，然后运行：
+
+```sh
+npm run android:release
+```
+
+该命令构建 APK，并生成 `releases/v<版本>/`、`SHA256SUMS` 和 `update.json`。提交这些文件、创建对应 `v<版本>` 标签后，一起推送即可供手机检查。用于覆盖升级的 APK 必须沿用同一签名；GitHub 临时 runner 自行生成的调试签名与本机签名不同，Actions 产物用于构建验证。
 
 ## GitHub 自动打包
 

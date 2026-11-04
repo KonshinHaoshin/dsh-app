@@ -4,6 +4,7 @@ import type{ConnectionProfile,ConnectionState}from'./types';
 import{parsePairingLink,redeemPairing,scanPairingCode}from'./pairing';
 import{Capacitor}from'@capacitor/core';
 import CameraScanner from './CameraScanner';
+import UpdatePanel from './UpdatePanel';
 type Props={profile:ConnectionProfile;state:ConnectionState;name:string;error:string;onConnect:(profile:ConnectionProfile)=>void;onDisconnect:()=>void;onClose:()=>void};
 export default function ConnectionSheet({profile,state,name,error,onConnect,onDisconnect,onClose}:Props){
   const[draft,setDraft]=useState(profile);const[manual,setManual]=useState(false);const[importing,setImporting]=useState(false);const[link,setLink]=useState('');const[localError,setLocalError]=useState('');const[scanning,setScanning]=useState(false);
@@ -27,5 +28,6 @@ export default function ConnectionSheet({profile,state,name,error,onConnect,onDi
       <button className="primary-button connect-submit" disabled={busy} type="submit"><Link2 size={16}/>连接</button>
     </form>}
     {online&&<button className="disconnect-button" onClick={onDisconnect}><Unplug size={15}/>断开连接</button>}
+    <UpdatePanel/>
   </>;
 }

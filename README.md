@@ -6,7 +6,7 @@ DeepSeek Harness 手机客户端，采用简约蓝白界面。Android 优先，�
 
 ## 安装 Android App
 
-下载 [DSH Android v0.8.0 APK](releases/v0.8.0/dsh-mobile-0.8.0-debug.apk)，在手机上安装。支持 **Android 8.0 及以上**。
+在 [Releases](https://github.com/KonshinHaoshin/dsh-app/releases) 页下载最新的 `dsh-mobile-<版本>-debug.apk`，在手机上安装。支持 **Android 8.0 及以上**。
 
 这是可直接安装的调试签名 APK，尚未配置商店发布签名。自行构建时应保留相同签名密钥，才能覆盖更新同签名的旧版本。
 
@@ -74,7 +74,7 @@ Android 的原生后台服务直接使用 WebRTC 和 WSS，锁屏通知不依赖
 
 Android 在 App 内显示下载进度，下载后验证 SHA-256、长度、包名、版本和与当前安装包一致的签名，再打开系统安装界面。首次需要允许 DSH 安装应用，返回后点击「安装更新」。系统仍会要求用户确认，不会静默安装。浏览器版本继续下载 APK；iOS 暂无签名安装包。
 
-更新源为本仓库 `main` 分支的 `update.json`，只接受本仓库与声明版本一致的 HTTPS 安装包。覆盖更新应保留原 App，避免卸载丢失配对。
+更新源为本仓库 `main` 分支的 `update.json`，只接受本仓库 Releases 中与声明版本一致的 HTTPS 安装包（旧版本仍兼容历史上 `releases/v<版本>/` 的 raw 地址）。覆盖更新应保留原 App，避免卸载丢失配对。
 
 ## 本地开发
 
@@ -130,7 +130,17 @@ npm run android:open
 npm run android:release
 ```
 
-该命令构建 APK，并生成 `releases/v<版本>/`、`SHA256SUMS` 和 `update.json`。提交这些文件、创建对应 `v<版本>` 标签后，一起推送即可供手机检查。用于覆盖升级的 APK 必须沿用同一签名；GitHub 临时 runner 自行生成的调试签名与本机签名不同，Actions 产物用于构建验证。
+该命令构建 APK，生成 `artifacts/dsh-mobile-<版本>-debug.apk`、`releases/v<版本>/SHA256SUMS` 和 `update.json`。
+
+APK 二进制**不提交到仓库**（本仓库 `*.apk` 已被忽略），改为作为 GitHub Release 资产发布：
+
+```sh
+gh release create v<版本> artifacts/dsh-mobile-<版本>-debug.apk \
+  releases/v<版本>/SHA256SUMS --title "DSH Android v<版本>" --notes-file release-notes.md
+git push origin main --tags
+```
+
+`update.json` 中的下载地址指向 `releases/download/v<版本>/` 资产，提交后手机即可检查更新。用于覆盖升级的 APK 必须沿用同一签名；GitHub 临时 runner 自行生成的调试签名与本机签名不同，Actions 产物用于构建验证。
 
 ## GitHub 自动打包
 

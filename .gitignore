@@ -16,6 +16,4 @@ ios/App/App/public/
 *.jks
 *.apk
 *.aab
-!releases/
-!releases/**/*.apk
 ._*

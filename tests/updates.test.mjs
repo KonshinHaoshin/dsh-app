@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {isNewerVersion,parseAppUpdate,fetchAppUpdate,UPDATE_MANIFEST_URL} from '../src/updates.ts';
-const update={schemaVersion:1,appId:'moe.shelterhub.dsh',version:'0.3.0',versionCode:3,notes:'推理强度和检查更新',android:{url:'https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.3.0/releases/v0.3.0/dsh-mobile-0.3.0-debug.apk',sha256:'a'.repeat(64),size:34000000}};
+const update={schemaVersion:1,appId:'moe.shelterhub.dsh',version:'0.3.0',versionCode:3,notes:'推理强度和检查更新',android:{url:'https://github.com/KonshinHaoshin/dsh-app/releases/download/v0.3.0/dsh-mobile-0.3.0-debug.apk',sha256:'a'.repeat(64),size:34000000}};
 test('version comparison handles numeric segments and avoids downgrades',()=>{
   assert.equal(isNewerVersion('0.3.10','0.3.9'),true);assert.equal(isNewerVersion('1.0.0','0.99.99'),true);
   assert.equal(isNewerVersion('0.3.0','0.3.0'),false);assert.equal(isNewerVersion('0.2.0','0.3.0'),false);
@@ -11,6 +11,12 @@ test('update manifests accept only the app release download and reject untrusted
   for(const url of ['http://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.3.0/releases/v0.3.0/app.apk','https://untrusted.example/app.apk','https://raw.githubusercontent.com/other/repo/v0.3.0/releases/v0.3.0/app.apk',update.android.url+'?token=secret'])assert.throws(()=>parseAppUpdate({...update,android:{...update.android,url}}));
   assert.throws(()=>parseAppUpdate({...update,appId:'another.app'}));
 });
+test('release assets are trusted, including the legacy raw path and no other repository',()=>{
+  const legacy='https://raw.githubusercontent.com/KonshinHaoshin/dsh-app/v0.3.0/releases/v0.3.0/dsh-mobile-0.3.0-debug.apk';
+  assert.equal(parseAppUpdate({...update,android:{...update.android,url:legacy}}).android.url,legacy);
+  for(const url of ['https://github.com/other/dsh-app/releases/download/v0.3.0/dsh-mobile-0.3.0-debug.apk','https://github.com/KonshinHaoshin/dsh-app/releases/download/v0.4.0/dsh-mobile-0.4.0-debug.apk','https://github.com/KonshinHaoshin/dsh-app/releases/download/v0.3.0/app.apk'])assert.throws(()=>parseAppUpdate({...update,android:{...update.android,url}}),/不受信任/);
+});
+
 test('manual update check omits credentials, bypasses cache and surfaces network errors',async()=>{
   const latest=await fetchAppUpdate(async(url,options)=>{assert.equal(url,UPDATE_MANIFEST_URL);assert.equal(options.credentials,'omit');assert.equal(options.cache,'no-store');return Response.json(update);});
   assert.equal(latest.version,'0.3.0');
